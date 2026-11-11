@@ -2951,7 +2951,7 @@ function openRecMenu(){
    <label>Duração de cada chegada</label><select class="in" id="stSeconds"><option value="12">12 segundos</option><option value="18">18 segundos</option><option value="20">20 segundos</option><option value="25">25 segundos</option><option value="40">40 segundos</option></select>
    <button type="button" class="btn big" id="stQueueAdd">➕ Adicionar à lista do vídeo</button><div class="bgrp">👥 Moradores deste episódio (em ordem)</div><div id="stWelcomeQueue"></div><p id="stWelcomeCount" class="tip"></p>
  <div class="bgrp">📝 Roteiro do episódio</div><label><input type="checkbox" id="stScriptMode"> Roteiro personalizado</label>
- <div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], [MORADOR: Nome], [CENA: FINAL], [CONVITE]. A ordem determina as chegadas.</p>
+ <div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], [MORADOR: Nome], [CENA: FINAL], [CONVITE]. Para mudar a câmera dentro de uma cena, use [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3] ou [CAMERA: SEGUIR Nome]. Também: [ZOOM: 2] e [ESPERAR: 3].</p>
  <textarea class="in" id="stScriptText" rows="12" style="width:100%;box-sizing:border-box"></textarea>
  <button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button>
  <button type="button" class="btn sm" id="stScriptSave">💾 Salvar roteiro</button></div><p class="tip">Todos aparecerão em um único vídeo, um de cada vez, com nome e profissão.</p>`;
@@ -2960,7 +2960,7 @@ function openRecMenu(){
  if(STUDIO.mode==='resident'){extra='<label>Morador em destaque</label><select class="in" id="stResident">'+(npcs.length?npcs.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join(''):'<option value="">Adicione um morador primeiro</option>')+'</select>'}
  if(STUDIO.mode==='vote'||STUDIO.mode==='event'){
   const mode=STUDIO.mode;
-  extra+='<div class="bgrp">📝 Roteiro personalizado</div><label><input type="checkbox" id="stScriptMode"> Usar meu roteiro</label><div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], ['+(mode==='vote'?'VOTACAO':'EVENTO')+'], [CENA: FINAL]. O texto é exibido em sequência, sem voz.</p><textarea class="in" id="stScriptText" rows="11" style="width:100%;box-sizing:border-box"></textarea><button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button><button type="button" class="btn sm" id="stScriptSave">💾 Salvar roteiro</button></div>';
+  extra+='<div class="bgrp">📝 Roteiro personalizado</div><label><input type="checkbox" id="stScriptMode"> Usar meu roteiro</label><div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], ['+(mode==='vote'?'VOTACAO':'EVENTO')+'], [CENA: FINAL]. Use também [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3], [ZOOM: 2] e [ESPERAR: 3]. O texto é exibido em sequência, sem voz.</p><textarea class="in" id="stScriptText" rows="11" style="width:100%;box-sizing:border-box"></textarea><button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button><button type="button" class="btn sm" id="stScriptSave">💾 Salvar roteiro</button></div>';
  }
  $('stExtra').innerHTML=extra;
  if(STUDIO.mode==='vote'||STUDIO.mode==='event'){
