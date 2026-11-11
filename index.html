@@ -2487,6 +2487,7 @@ function pxStoryText(){
 }
 function pxStoryOverlay(g,w,h,age){
  if(!STUDIO.captions||!REC)return;
+ if(REC.arrivalId&&ARRIVALS.active&&ARRIVALS.index===ARRIVALS.ids.length-1&&(performance.now()-REC.arrivalStart)/1000>=REC.arrivalSeconds)return;
  const parts=REC.story||(REC.story=pxStoryText());
  const total=REC.arrivalSeconds||REC.vote?.seconds||REC.inviteSeconds|| (REC.studioMode==='event'?45:REC.studioMode==='resident'?60:REC.studioMode==='episode'?90:45);
  const index=Math.min(parts.length-1,Math.floor(age/Math.max(1,total/parts.length)));
@@ -2552,7 +2553,7 @@ function recFrame(now){
     const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-REC.arrivalStart)/1000;
     if(n&&STUDIO.captions&&age>=0){
       if(age<REC.arrivalSeconds)drawArrivalTag(g,W2,H2,s,n,age);
-      if(ARRIVALS.index===ARRIVALS.ids.length-1&&age>=REC.arrivalSeconds)drawShortsCTA(g,W2,H2,s,age-REC.arrivalSeconds,4);
+      // O convite final é desenhado após a narrativa, para não ficar encoberto.
     }
     if(age>=REC.arrivalSeconds&&!REC.stopping){
       if(ARRIVALS.index+1<ARRIVALS.ids.length){
@@ -2565,6 +2566,11 @@ function recFrame(now){
   }
   if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
   if(REC)pxStoryOverlay(g,W2,H2,hAge);
+  // No encerramento, esconder a legenda narrativa e manter o convite por cima.
+  if(REC&&REC.arrivalId&&STUDIO.captions&&ARRIVALS.index===ARRIVALS.ids.length-1){
+    const finalAge=(now-REC.arrivalStart)/1000-REC.arrivalSeconds;
+    if(finalAge>=0)drawShortsCTA(g,W2,H2,s,finalAge,4);
+  }
   // marca d'água
   if(STUDIO.captions){g.textAlign='center';g.textBaseline='middle';g.font=`700 ${28*s}px "Pixelify Sans",sans-serif`;g.lineWidth=6*s;g.strokeStyle='rgba(30,18,8,.8)';
   }
