@@ -2873,7 +2873,7 @@ function recFrame(now){
     g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;const tw=Math.min(W2-60*s,Math.max(g.measureText(ANN.t).width,(g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`,g.measureText(ANN.s).width))+60*s);
     g.fillStyle='#f7e2b5';rr(g,-tw/2,-62*s,tw,124*s,16*s);g.fill();g.lineWidth=6*s;g.strokeStyle='#8b4a1f';g.stroke();g.textAlign='center';g.fillStyle='#3b2412';g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.t,0,-16*s,tw-30*s);
     g.fillStyle='#8b4a1f';g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.s,0,32*s,tw-30*s);g.restore()}}
-  if(STUDIO.captions&&TOUR&&!REC.voice&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
+  if(STUDIO.captions&&TOUR&&!REC.voice&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else if(!REC.voice)drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
   if(REC.vote){
     drawVoteOverlay(g,W2,H2,hAge,REC.vote);
     if(REC.vote.voice&&!REC.stopping)playStudioVoice(REC.vote.voice,hAge,RECDEST);
@@ -3550,15 +3550,17 @@ function openStudioNarration(highlight,replay=null){
  modal(`<h3><span>Narração com ElevenLabs</span><button class="btn sm" id="mX">Voltar</button></h3>
  <p class="tip">🔒 Sua chave fica apenas na memória deste aparelho enquanto o app estiver aberto. Não é salva no GitHub, localStorage ou no projeto. A chave será enviada somente à API da ElevenLabs para gerar o áudio.</p>
  <label for="voiceApiKey">Chave da API ElevenLabs</label><input class="in" id="voiceApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Cole sua API Key">
- <label for="voiceModel">Modelo de voz</label><select class="in" id="voiceModel"><option value="eleven_multilingual_v2">Multilingual v2 (português)</option><option value="eleven_v3">Eleven v3</option><option value="eleven_flash_v2_5">Flash v2.5 (rápido)</option></select>
+ <label for="voiceModel">Modelo de voz</label><select class="in" id="voiceModel"><option value="eleven_multilingual_v2">Multilingual v2 (português)</option><option value="eleven_v3">Eleven v3</option><option value="eleven_flash_v2_5">Flash v2.5 (rápido)</option><option value="custom">Outro modelo (informar ID, inclusive v4 se disponível)</option></select><input class="in" id="voiceCustomModel" placeholder="ID do modelo na ElevenLabs" style="display:none">
  <label for="voiceId">ID da voz</label><input class="in" id="voiceId" placeholder="Selecione uma voz ou cole o Voice ID" autocomplete="off">
  <div class="row"><button class="btn" id="voiceList">Buscar minhas vozes</button><select class="in" id="voiceChoices" aria-label="Vozes disponíveis"><option value="">Escolha uma voz…</option></select></div>
  <details><summary>Texto dos cards</summary><ol>${texts.map(text=>'<li>'+esc(text)+'</li>').join('')}</ol></details>
  <div class="row"><button class="btn" id="voiceGenerate">Gerar narração</button><button class="btn" id="voiceUse" ${cached?'':'disabled'}>Usar no vídeo</button></div>
  <p id="voiceStatus" class="tip" aria-live="polite">${cached?'Narração pronta.':''}</p>`);
- const apiKey=$('voiceApiKey'),model=$('voiceModel'),voiceId=$('voiceId'),choices=$('voiceChoices'),generate=$('voiceGenerate'),status=$('voiceStatus'),use=$('voiceUse');
+ const apiKey=$('voiceApiKey'),model=$('voiceModel'),customModel=$('voiceCustomModel'),voiceId=$('voiceId'),choices=$('voiceChoices'),generate=$('voiceGenerate'),status=$('voiceStatus'),use=$('voiceUse');
  apiKey.value=VOTE_NARRATION.token||'';
- model.value=VOTE_NARRATION.model||'eleven_multilingual_v2';
+ model.value=['eleven_multilingual_v2','eleven_v3','eleven_flash_v2_5'].includes(VOTE_NARRATION.model)?VOTE_NARRATION.model:'custom';
+ customModel.value=model.value==='custom'?(VOTE_NARRATION.model||''):'';
+ model.onchange=()=>{customModel.style.display=model.value==='custom'?'block':'none'};model.onchange();
  voiceId.value=VOTE_NARRATION.voiceId||'';
  let controller;
  $('mX').onclick=()=>{controller?.abort();openRecMenu(highlight)};
@@ -3579,7 +3581,9 @@ function openStudioNarration(highlight,replay=null){
   const key=apiKey.value.trim(),id=voiceId.value.trim();
   if(!key||!id){status.textContent='Informe a chave da API e selecione uma voz.';return}
   const context=audioInit();if(!context){status.textContent='Este navegador não consegue preparar a faixa de áudio.';return}
-  VOTE_NARRATION.token=key;VOTE_NARRATION.model=model.value;VOTE_NARRATION.voiceId=id;
+  const selectedModel=model.value==='custom'?customModel.value.trim():model.value;
+  if(!selectedModel){status.textContent='Informe o ID do modelo desejado.';return}
+  VOTE_NARRATION.token=key;VOTE_NARRATION.model=selectedModel;VOTE_NARRATION.voiceId=id;
   controller=new AbortController();const {signal}=controller;
   generate.disabled=true;use.disabled=true;const clips=new Map();
   try{
@@ -3587,7 +3591,7 @@ function openStudioNarration(highlight,replay=null){
     status.textContent=`Gerando card ${i+1} de ${texts.length}…`;
     const response=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+encodeURIComponent(id),{
      method:'POST',headers:{'Content-Type':'application/json','xi-api-key':key,'Accept':'audio/mpeg'},
-     body:JSON.stringify({text,model_id:model.value}),signal,cache:'no-store'
+     body:JSON.stringify({text,model_id:selectedModel}),signal,cache:'no-store'
     });
     if(!response.ok){const error=await response.json().catch(()=>null);throw Error(error?.detail?.message||error?.message||'ElevenLabs retornou HTTP '+response.status)}
     clips.set(text,await context.decodeAudioData(await response.arrayBuffer()));
@@ -4134,7 +4138,7 @@ const SFX={
 };
 const SFX_GAP={chop:0.22,pick:0.25,hammer:0.18,bird:2,cricket:1.2,cluck:0.5,boom:0.25,splash:0.8,crackle:0.3};
 const lastS={};
-function sfx(name){if(!canPlay())return;const t=AC.currentTime,g=SFX_GAP[name]??0.1;if(lastS[name]!=null&&t-lastS[name]<g)return;lastS[name]=t;try{SFX[name](t+0.01)}catch(e){}}
+function sfx(name){if(!canPlay()||(REC?.voice&&REC?.mr?.state==='recording'))return;const t=AC.currentTime,g=SFX_GAP[name]??0.1;if(lastS[name]!=null&&t-lastS[name]<g)return;lastS[name]=t;try{SFX[name](t+0.01)}catch(e){}}
 function sfxAt(name,wx,wy){if(onScreenXY(wx,wy,40))sfx(name)}
 let ambT=0,tuneT=0;
 function audioTick(dt){
