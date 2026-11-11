@@ -150,6 +150,7 @@ body.pxCinema #pxQuick{opacity:.65}body.pxCinema #pxQuick:hover{opacity:1}
     <div class="sex"><button class="btn on" data-sex="m">👨 Homem</button><button class="btn" data-sex="f">👩 Mulher</button></div>
     <button class="btn" id="fPet" style="width:100%;margin-top:6px">🐾 Pet: nenhum</button>
     <button class="btn big" id="addBtn">Adicionar morador</button>
+    <button class="btn sm" id="bulkBtn">📋 Adicionar vários</button>
     <p class="tip" id="tip"></p>
   </section>
   <section class="card"><h3><span>🏗️ Obras pendentes</span><button class="btn vote" id="voteBtn">🗳️ Gerar obra</button></h3><div id="queueList"></div></section>
@@ -183,7 +184,6 @@ body.pxCinema #pxQuick{opacity:.65}body.pxCinema #pxQuick:hover{opacity:1}
       <span class="lbl">🔊 Som</span>
       <button class="btn sm" id="sndLive">🔇 Som no celular: desligado</button><button class="btn sm on" id="sndRec">🎬 Som nos vídeos: ligado</button>
       <span class="lbl">Dados</span>
-      <button class="btn sm" id="bulkBtn">📋 Adicionar vários</button>
       <button class="btn sm" id="backupBtn">💾 Backup</button>
       <button class="btn sm red" id="resetBtn">🔄 Novo mundo</button>
     </div>
@@ -2200,10 +2200,10 @@ function invitePreview(){
 let INVITE_PREVIEW_CAM={x:0,y:0,z:1},INVITE_PREVIEW_FOLLOW=null,INVITE_PREVIEW_PIN=false;
 function inviteRecord(){
  if(npcs.length){alert('O mundo já possui moradores. Grave o convite antes do primeiro cadastro.');return}
- STUDIO.mode='invitation';STUDIO.format='vertical';STUDIO.camera='auto';STUDIO.hud=false;
+ STUDIO.mode='invitation';
  const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  closeModal();if(!inviteBegin(false)){soundRec=oldSound;delete STUDIO.restoreSound;return}
- startRec(false);
+ startRec(false,'vertical');
  if(!REC){TOUR=null;soundRec=oldSound;delete STUDIO.restoreSound;return}
  REC.inviteSeconds=INVITE.seconds;REC.hookKind='';REC.inviteMusicStep=-1;
 }
@@ -2452,6 +2452,36 @@ function welcomeQueueAdd(){
  WELCOME_QUEUE.push({...d});saveWelcomeDraft();welcomeQueueRender();
  $('stNewName').value='';$('stNewHandle').value='';$('stNewPet').value='';
 }
+function welcomeBulkMenu(){
+ modal(`<h3><span>Colar lista de inscritos</span><button class="btn sm" id="bulkBack">Voltar</button></h3>
+ <label for="studioBulkText">Um por linha, no formato Nome, profissão, sexo (opcional)</label>
+ <textarea class="in" id="studioBulkText" rows="7" placeholder="Lucas, lenhador&#10;Ana, pedreira"></textarea>
+ <button class="btn" id="studioBulkReview">Revisar lista</button><div id="studioBulkResult" aria-live="polite"></div>
+ <button class="btn" id="studioBulkAccept" disabled>Adicionar à fila do vídeo</button>`);
+ $('bulkBack').onclick=openRecMenu;
+ const input=$('studioBulkText'),review=$('studioBulkResult'),accept=$('studioBulkAccept');
+ let approved=[];
+ input.oninput=()=>{approved=[];review.textContent='';accept.disabled=true};
+ $('studioBulkReview').onclick=()=>{
+  const names=new Set([...WELCOME_QUEUE,...npcs].map(n=>norm(n.name)));
+  approved=[];
+  const rows=[];
+  for(const line of input.value.split('\n').map(s=>s.trim()).filter(Boolean)){
+   const draft=parseBulkResident(line,32,24);
+   if(!draft){rows.push(`<li>${esc(line)} — revise os dados</li>`);continue}
+   const name=norm(draft.name);
+   if(names.has(name)){rows.push(`<li>${esc(draft.name)} — nome repetido</li>`);continue}
+   names.add(name);
+   approved.push(draft);
+   rows.push(`<li>${esc(draft.name)} · ${esc(profLabel(draft))}${draft.prof==='custom'?' (profissão personalizada)':''}</li>`);
+  }
+  review.innerHTML=rows.length?`<p>${approved.length} para incluir</p><ul>${rows.join('')}</ul>`:'Cole pelo menos um nome.';
+  accept.disabled=!approved.length;
+ };
+ accept.onclick=()=>{
+  WELCOME_QUEUE.push(...approved);saveWelcomeDraft();openRecMenu();
+ };
+}
 function welcomeQueueRender(){
  const el=$('stWelcomeQueue');if(!el)return;
  el.innerHTML=WELCOME_QUEUE.length?WELCOME_QUEUE.map((d,i)=>`<div class="q"><span class="n">${i+1}. ${esc(d.name)} — ${esc(d.prof==='custom'?d.custom:profLabel(d))}</span>
@@ -2474,7 +2504,17 @@ function welcomeQueueRender(){
  if($('stWelcomeCount')){
   let style=$('stWelcomeStyle')?.value||'auto';if(style==='auto')style=WELCOME_QUEUE.length>=5?'group':'individual';
   const seconds=style==='individual'?9+WELCOME_QUEUE.length*ARRIVALS.seconds+4:welcomeGroupTiming(WELCOME_QUEUE.length,style==='express').cta+LIVING_INVITE_SECONDS;
+  $('stArrivalDuration').hidden=style!=='individual';
+  $('stWelcomeScript').hidden=style!=='individual';
+  $('stScriptMode').checked=style==='individual'&&WELCOME_USE_SCRIPT;
+  $('stScriptArea').style.display=$('stScriptMode').checked?'block':'none';
   $('stWelcomeCount').textContent=WELCOME_QUEUE.length+' moradores · aproximadamente '+seconds+' segundos ('+(style==='individual'?'individual':style==='express'?'expressa':'em grupo')+')';
+ }
+ const scene=$('stSceneSection');
+ if(scene){
+  const current=scene.value;
+  scene.replaceChildren(new Option('Vila','CENA: VILA'),...WELCOME_QUEUE.map(n=>new Option(n.name,'MORADOR: '+n.name)),new Option('Final','CENA: FINAL'));
+  if([...scene.options].some(option=>option.value===current))scene.value=current;
  }
 }
 function welcomeStartBatch(replay=null){
@@ -2643,7 +2683,7 @@ function recFrame(now){
   const sw=cv.width,sh=cv.height,ratio=W2/H2;let cw2=sw,ch2=sw/ratio;if(ch2>sh){ch2=sh;cw2=sh*ratio}
   g.imageSmoothingEnabled=true;g.drawImage(cv,(sw-cw2)/2,(sh-ch2)/2,cw2,ch2,0,0,W2,H2);
   // cabeçalho
-  if(STUDIO.hud) {
+  if(STUDIO.hud&&REC.studioMode!=='invitation') {
   g.fillStyle='rgba(30,18,8,.74)';const HY=H2*SAFE.top+6*s;rr(g,24*s,HY,W2-48*s,112*s,16*s);g.fill();g.lineWidth=3*s;g.strokeStyle='#e9b768';g.stroke();
   g.textAlign='left';g.textBaseline='middle';g.fillStyle='#ffe9b8';g.font=`700 ${34*s}px "Pixelify Sans",sans-serif`;g.fillText(villageName,48*s,HY+36*s,W2-96*s);
   g.fillStyle='#fff';g.font=`600 ${24*s}px "Pixelify Sans",sans-serif`;g.fillText(`Dia ${day()} · 👥 ${fmt(npcs.length)} moradores`,48*s,HY+74*s,W2*0.55);g.textAlign='right';g.fillStyle='#f6c344';g.font=`700 ${22*s}px "Pixelify Sans",sans-serif`;g.fillText('@mundopixelandia',W2-48*s,HY+74*s);g.textAlign='left';
@@ -2711,9 +2751,9 @@ function recFrame(now){
 function canRecord(){return !!(cv.captureStream&&window.MediaRecorder)}
 function startRecEvent(k,scenes){startRec(false);if(!REC)return;REC.hookKind=k;REC.hook=hookText(k);REC.ev={k,t0:performance.now(),seen:false};if(scenes)studioScriptAttach(scenes,'event');const R0=REC;setTimeout(()=>{if(REC===R0)startEvent(k)},scenes?REC.customStudio.mainStart*1000:1500)}
 function evActive(k){return k==='fire'?!!EV.fire:k==='party'?EV.party>0:k==='chickens'?EV.chickens.length>0:k==='ufo'?!!EV.ufo:k==='rain'?EV.rain>0:k==='snow'?EV.snow>0:false}
-function startRec(auto){
+function startRec(auto,format=STUDIO.format){
   if(!canRecord()){modal(`<h3><span>🎬 Gravar vídeo</span><button class="btn sm" id="mX">✕</button></h3><p>Este aparelho não deixa o jogo gravar a si mesmo. Use o gravador de tela do celular e o botão ▶️ Passeio automático.</p>`);$('mX').onclick=closeModal;return}
-  const c=document.createElement('canvas');const horizontal=STUDIO.format==='horizontal';c.width=horizontal?1280:720;c.height=horizontal?720:1280;const g=c.getContext('2d');
+  const c=document.createElement('canvas');const horizontal=format==='horizontal';c.width=horizontal?1280:720;c.height=horizontal?720:1280;const g=c.getContext('2d');
   audioInit();const hasA=soundRec&&RECDEST&&RECDEST.stream.getAudioTracks().length>0;
   const types=hasA?['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4']:['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4;codecs=avc1.42E01E','video/mp4'];let mime='';for(const t of types)if(MediaRecorder.isTypeSupported(t)){mime=t;break}
   let mr;try{const vs=c.captureStream(30),tr=[...vs.getVideoTracks()];if(hasA)tr.push(...RECDEST.stream.getAudioTracks());const stream=new MediaStream(tr);mr=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:5000000,videoKeyFrameIntervalDuration:1000}:undefined)}catch(e){modal(`<h3>🎬 Gravar vídeo</h3><p>Não deu para gravar aqui (${esc(e.message||e)}). Use o gravador de tela do celular.</p><button class="btn" id="mX">Fechar</button>`);$('mX').onclick=closeModal;return}
@@ -3128,6 +3168,48 @@ function studioScriptRead(mode){
  try{localStorage.setItem('pixelandia-script-'+mode,raw)}catch(e){}
  try{return studioScriptParse(raw,mode)}catch(e){alert(e.message);return false}
 }
+function mountSceneBuilder(mode){
+ const area=$('stScriptArea'),editor=$('stScriptText');
+ const advanced=document.createElement('details');
+ advanced.innerHTML='<summary>Avançado · editar comandos</summary>';
+ advanced.append(...area.childNodes);
+ const sections=mode==='welcome'
+  ?['CENA: VILA',...WELCOME_QUEUE.map(n=>'MORADOR: '+n.name),'CENA: FINAL']
+  :['CENA: VILA',mode==='vote'?'VOTACAO':'EVENTO','CENA: FINAL'];
+ const locations=[['VILA','Praça'],['LAGO','Lago'],...buildings.filter(b=>b.done).map(b=>['CONSTRUCAO '+b.id,bName(b)+' · nº '+b.id])];
+ const options=items=>items.map(([value,label])=>`<option value="${esc(value)}">${esc(label)}</option>`).join('');
+ area.innerHTML=`<label for="stSceneSection">Cena</label><select class="in" id="stSceneSection">${options(sections.map(s=>[s,s.replace(/^CENA: /,'').replace(/^MORADOR: /,'')]))}</select>
+ <label for="stSceneLocation">Local da câmera</label><select class="in" id="stSceneLocation"><option value="">Câmera atual</option>${options(locations)}</select>
+ <label for="stSceneResident">Seguir morador</label><select class="in" id="stSceneResident"><option value="">Nenhum</option>${options(npcs.filter(n=>!/[\[\]\r\n]/.test(n.name)).map(n=>[n.name,n.name]))}</select>
+ <label for="stSceneHold">Tempo extra de leitura</label><select class="in" id="stSceneHold"><option value="">Automático</option><option value="2">+2 segundos</option><option value="4">+4 segundos</option><option value="6">+6 segundos</option></select>
+ <label for="stSceneText">Texto do card</label><input class="in" id="stSceneText" maxlength="180">
+ <button type="button" class="btn" id="stSceneAdd">Adicionar ao roteiro</button><p class="tip" id="stSceneStatus" aria-live="polite"></p>`;
+ area.append(advanced);
+ const location=$('stSceneLocation'),resident=$('stSceneResident'),text=$('stSceneText'),status=$('stSceneStatus');
+ location.onchange=()=>{if(location.value)resident.value=''};
+ resident.onchange=()=>{if(resident.value)location.value=''};
+ $('stSceneAdd').onclick=()=>{
+  const message=text.value.trim();
+  if(!message||/^\[.*\]$/.test(message)){status.textContent='Digite o texto do card.';return}
+  if(!editor.value.trim())$('stScriptExample').click();
+  if(!editor.value.trim())return;
+  const marker='['+$('stSceneSection').value+']';
+  const lines=editor.value.trimEnd().split('\n');
+  const at=lines.findIndex(line=>line.trim().toUpperCase()===marker.toUpperCase());
+  let end=at+1;
+  while(end<lines.length&&!/^\[(?:CENA:|MORADOR:|CONVITE\]|EVENTO\]|VOTACAO\])/i.test(lines[end].trim()))end++;
+  if(at<0){
+   // A cena final é opcional nos roteiros antigos de votação e evento.
+   if(marker!=='[CENA: FINAL]'||mode==='welcome'){status.textContent='Inclua essa cena no roteiro avançado ou gere um modelo atualizado.';return}
+   end=lines.length;lines.push('',marker);end=lines.length;
+  }
+  const camera=resident.value?'SEGUIR '+resident.value:location.value;
+  const hold=$('stSceneHold').value;
+  lines.splice(end,0,...(camera?['[CAMERA: '+camera+']']:[]),...(hold?['[ESPERAR: '+hold+']']:[]),message,'');
+  editor.value=lines.join('\n');
+  editor.oninput();text.value='';status.textContent='Card adicionado ao roteiro.';
+ };
+}
 function studioScriptAttach(scenes,mode){
  if(!REC||!scenes)return;
  const sections=scenes.map(x=>{const c=cameraScriptExtract(x.lines);return {cmd:x.cmd,lines:c.lines,cues:c.cues,duration:Math.max(5,Math.ceil(c.lines.join(' ').length/12)+2)+c.extra}});
@@ -3136,7 +3218,7 @@ function studioScriptAttach(scenes,mode){
  const mainMin=mode==='vote'?STUDIO.voteSeconds:({rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[STUDIO.event]||60);
  main.duration=Math.max(main.duration,mainMin);
  let t=0;for(const section of sections){section.start=t;t+=section.duration}
- REC.cameraTimeline=cameraScriptTimeline(sections,0);
+ REC.cameraTimeline=cameraScriptTimeline(scenes.map((scene,i)=>({...scene,duration:sections[i].duration})),0);
  REC.customStudio={mode,sections,duration:t,mainStart:main.start,mainDuration:main.duration};
  if(mode==='vote'){REC.vote.seconds=t;REC.vote.start=main.start;REC.vote.visualSeconds=main.duration}
  if(mode==='event'){REC.ev.t0=REC.start+main.start*1000;REC.ev.scripted=true}
@@ -3328,6 +3410,7 @@ function drawDayRecap(g,w,h,recap,now){
  }
 }
 const STUDIO={voteOptions:['casa','celeiro','mercado'],voteSeconds:20,mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party',episodeVote:true};
+const USE_STUDIO_SCRIPT={vote:false,event:false};
 try{
  const draft=JSON.parse(localStorage.getItem(WELCOME_DRAFT_KEY)||'null');
  if(draft){
@@ -3339,13 +3422,63 @@ try{
   WELCOME_USE_SCRIPT=!!draft.useScript;
  }
 }catch(e){}
+function focusStudioResident(resident){
+ TOUR=null;follow=resident.id;pinnedFollow=true;
+ if(resident.active){cam.x=resident.x;cam.y=resident.y;clampCam()}
+}
+function studioResidentPreview(){
+ const resident=npcs.find(n=>n.id===Number(STUDIO.resident));
+ if(!resident){alert('Escolha um morador para a prévia.');return}
+ const previous={cam:{...cam},TOUR,follow,pinnedFollow,followUntil};
+ const story=pxStoryText();
+ focusStudioResident(resident);
+ modal(`<h3><span>${esc(resident.name)}</span><button class="btn sm" id="mX">Voltar</button></h3>
+ <canvas id="stResidentCanvas" style="display:block;max-width:100%;max-height:65vh;object-fit:contain;margin:auto"></canvas>`);
+ const target=$('stResidentCanvas'),horizontal=STUDIO.format==='horizontal';
+ target.width=horizontal?960:540;target.height=horizontal?540:960;
+ const g=target.getContext('2d'),start=performance.now();
+ let raf;
+ function stop(){
+  cancelAnimationFrame(raf);Object.assign(cam,previous.cam);
+  ({TOUR,follow,pinnedFollow,followUntil}=previous);
+  openRecMenu();
+ }
+ function tick(now){
+  if(!$('modalBox').contains(target)||$('modal').style.display==='none'){
+   Object.assign(cam,previous.cam);
+   ({TOUR,follow,pinnedFollow,followUntil}=previous);
+   return;
+  }
+  const age=(now-start)/1000,ratio=target.width/target.height;
+  const width=Math.min(cv.width,cv.height*ratio),height=width/ratio;
+  g.drawImage(cv,(cv.width-width)/2,(cv.height-height)/2,width,height,0,0,target.width,target.height);
+  if(STUDIO.captions)pxDrawStoryText(g,target.width,target.height,story[Math.min(story.length-1,Math.floor(age/12))]);
+  raf=requestAnimationFrame(tick);
+ }
+ $('mX').onclick=stop;raf=requestAnimationFrame(tick);
+}
+function studioEventOutline(){
+ const scenes=studioScriptRead('event');
+ if(scenes===false)return;
+ let rows;
+ try{
+  rows=scenes?scenes.map(scene=>{
+   const {lines}=cameraScriptExtract(scene.lines);
+   return `<li><b>${esc(scene.cmd)}</b>${lines.length?' · '+esc(lines.join(' ')):''}</li>`;
+  }):pxStoryText().map(line=>'<li>'+esc(line)+'</li>');
+ }catch(e){alert(e.message);return}
+ const title=EVENTS.find(([key])=>key===STUDIO.event)?.[2]||'Evento especial';
+ modal(`<h3><span>${esc(title)}</span><button class="btn sm" id="mX">Voltar</button></h3>
+ <p class="tip">O evento será iniciado na vila ao gravar.</p><ol>${rows.join('')}</ol>`);
+ $('mX').onclick=openRecMenu;
+}
 function openRecMenu(){
  const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['recap','🌙','Resumo do dia','Um destaque, a noite na vila e o amanhecer'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
  modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o conteúdo, ajuste a gravação e comece seu vídeo.</p>
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
- <div class="bgrp">2. Configuração</div><div class="studio-fields"><label>Formato do vídeo</label><select class="in" id="stFormat"><option value="horizontal">▭ Horizontal 16:9 — YouTube</option><option value="vertical">▯ Vertical 9:16 — Shorts / Reels</option></select>
- <label>Câmera</label><select class="in" id="stCamera"><option value="auto">🎬 Diretor automático</option><option value="manual">🕹️ Manual</option><option value="fixed">📌 Fixa</option></select>
+ <div class="bgrp">2. Configuração</div><div class="studio-fields"><div id="stFormatField"><label for="stFormat">Formato do vídeo</label><select class="in" id="stFormat"><option value="horizontal">▭ Horizontal 16:9 — YouTube</option><option value="vertical">▯ Vertical 9:16 — Shorts / Reels</option></select></div>
+ <div id="stCameraField"><label for="stCamera">Câmera</label><select class="in" id="stCamera"><option value="auto">🎬 Diretor automático</option><option value="manual">🕹️ Manual</option><option value="fixed">📌 Fixa</option></select></div>
  <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 📖 História narrada em textos e legendas</label><label><input type="checkbox" id="stMusic"> 🎵 Música e efeitos no vídeo (sem voz)</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
  <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia</button></div>
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
@@ -3356,11 +3489,15 @@ function openRecMenu(){
  for(const [key,id] of [['captions','stCaptions'],['music','stMusic'],['hud','stHud']]){$(id).checked=STUDIO[key];$(id).onchange=e=>{STUDIO[key]=e.target.checked;update()}}
  f.onchange=()=>{STUDIO.format=f.value;if(STUDIO.mode==='welcome')saveWelcomeDraft();update()};camSel.onchange=()=>{STUDIO.camera=camSel.value;update()};
  $('modalBox').querySelectorAll('[data-studio]').forEach(b=>b.onclick=()=>{STUDIO.mode=b.dataset.studio;update()});
- function update(){if(STUDIO.mode==='invitation'){STUDIO.format='vertical';STUDIO.camera='auto';STUDIO.hud=false;f.value='vertical';camSel.value='auto';$('stHud').checked=false}document.querySelectorAll('.studio-mode').forEach(b=>b.classList.toggle('studio-selected',b.dataset.studio===STUDIO.mode));
+ function update(){document.querySelectorAll('.studio-mode').forEach(b=>b.classList.toggle('studio-selected',b.dataset.studio===STUDIO.mode));
  const recapMode=STUDIO.mode==='recap';
- camSel.disabled=recapMode;
- camSel.value=recapMode?'auto':STUDIO.camera;
- $('stPreview').hidden=recapMode;
+ const invitationMode=STUDIO.mode==='invitation';
+ const cameraField=STUDIO.mode==='episode';
+ $('stFormatField').hidden=invitationMode;
+ $('stCameraField').hidden=!cameraField;
+ $('stHud').closest('label').hidden=invitationMode;
+ $('stPreview').hidden=recapMode||STUDIO.mode==='free'||(cameraField&&STUDIO.camera!=='auto');
+ $('stPreview').textContent=STUDIO.mode==='event'?'Ver roteiro':'👁️ Prévia';
  let extra='';if(STUDIO.mode==='event'){extra='<label>Evento</label><select class="in" id="stEvent">'+EVENTS.map(([k,i,l])=>`<option value="${k}">${i} ${l}</option>`).join('')+'</select>'}
  const episodeMode=STUDIO.mode==='episode';
  if(episodeMode){
@@ -3368,10 +3505,10 @@ function openRecMenu(){
   const finished=buildings.filter(b=>b.done).slice().reverse();
   const options=finished.map(b=>`<option value="${b.id}">${esc(BT[b.type].icon+' '+bName(b))} · nº ${b.id}</option>`).join('');
   extra=`<label><input type="checkbox" id="stEpisodeVote" ${STUDIO.episodeVote?'checked':''}> Abrir com o resultado da votação</label>
-  <label for="stEpisodeWork">Obra vencedora</label><select class="in" id="stEpisodeWork">
+  <div id="stEpisodeResult" ${STUDIO.episodeVote?'':'hidden'}><label for="stEpisodeWork">Obra vencedora</label><select class="in" id="stEpisodeWork">
    <option value="">${latestVote?esc('Último resultado · '+BT[latestVote.type].label):'Selecione uma obra pronta'}</option>
    ${options}</select>
-  <p class="tip">Escolha uma obra pronta para apresentar o resultado de uma votação anterior. Use o diretor automático e ative as legendas para exibir a abertura.</p>`;
+  <p class="tip">Escolha uma obra pronta para apresentar o resultado de uma votação anterior. Use o diretor automático e ative as legendas para exibir a abertura.</p></div>`;
  }
  if(recapMode){
   const options=recapHighlights.map((event,i)=>`<option value="${i}">Dia ${event.d} · ${esc(event.t)}</option>`).join('');
@@ -3395,23 +3532,22 @@ function openRecMenu(){
    <label>@ do inscrito (opcional)</label><input class="in" id="stNewHandle" maxlength="40" placeholder="Ex.: @heitor" autocomplete="off">
    <label>Animal de estimação (opcional)</label><select class="in" id="stNewPet"><option value="">Nenhum</option><option value="dog">🐶 Cachorro</option><option value="cat">🐱 Gato</option></select>
    <label>Tipo de chegada</label><select class="in" id="stWelcomeStyle"><option value="auto">✨ Automático (5 ou mais: grupo)</option><option value="individual">👤 Individual — apresentação completa</option><option value="group">👥 Em grupo — 2 segundos por nome</option><option value="express">⚡ Expressa — 5 nomes por tela</option></select>
-   <label>Duração de cada chegada</label><select class="in" id="stSeconds"><option value="12">12 segundos</option><option value="18">18 segundos</option><option value="20">20 segundos</option><option value="25">25 segundos</option><option value="40">40 segundos</option></select>
-   <button type="button" class="btn big" id="stQueueAdd">➕ Adicionar à lista do vídeo</button><div class="bgrp">👥 Moradores deste episódio (em ordem)</div><div id="stWelcomeQueue"></div><p id="stWelcomeCount" class="tip"></p>
- <div class="bgrp">📝 Roteiro do episódio</div><label><input type="checkbox" id="stScriptMode"> Roteiro personalizado</label>
+   <div id="stArrivalDuration"><label for="stSeconds">Duração de cada chegada</label><select class="in" id="stSeconds"><option value="12">12 segundos</option><option value="18">18 segundos</option><option value="20">20 segundos</option><option value="25">25 segundos</option><option value="40">40 segundos</option></select></div>
+   <div class="row"><button type="button" class="btn" id="stQueueAdd">➕ Adicionar à lista do vídeo</button><button type="button" class="btn" id="stQueueBulk">📋 Colar lista</button></div><div class="bgrp">👥 Moradores deste episódio (em ordem)</div><div id="stWelcomeQueue"></div><p id="stWelcomeCount" class="tip"></p>
+ <div id="stWelcomeScript"><div class="bgrp">📝 Roteiro do episódio</div><label><input type="checkbox" id="stScriptMode"> Roteiro personalizado</label>
  <div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], [MORADOR: Nome], [CENA: FINAL], [CONVITE]. Para mudar a câmera dentro de uma cena, use [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3] ou [CAMERA: SEGUIR Nome]. Também: [ZOOM: 2] e [ESPERAR: 3].</p>
  <textarea class="in" id="stScriptText" rows="12" style="width:100%;box-sizing:border-box"></textarea>
- <button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button>
- <button type="button" class="btn sm" id="stScriptSave">💾 Salvar roteiro</button></div><p class="tip">Todos aparecerão em um único vídeo, um de cada vez, com nome e profissão.</p>`;
+ <button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button></div></div>`;
  }
  if(STUDIO.mode==='vote'){extra=`<div class="bgrp">🗳️ Votação da próxima construção</div><p class="tip">Selecione três obras do catálogo. O vídeo conta a história da vila antes de mostrar os três cards de votação.</p>${[0,1,2].map(i=>`<label for="stVote${i}">Opção ${i+1}</label><select class="in" id="stVote${i}">${VOTE_BUILDINGS.map(([key,b])=>`<option value="${key}">${b.icon} ${esc(b.label)}</option>`).join('')}</select>`).join('')}<label>Duração do Short</label><select class="in" id="stVoteSeconds"><option value="20">20 segundos</option><option value="30">30 segundos</option></select><p class="tip">O vídeo não contabiliza votos automaticamente. Confira os comentários do YouTube e construa a mais votada no jogo.</p>`;}
- if(STUDIO.mode==='resident'){extra='<label>Morador em destaque</label><select class="in" id="stResident">'+(npcs.length?npcs.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join(''):'<option value="">Adicione um morador primeiro</option>')+'</select>'}
+ if(STUDIO.mode==='resident'){extra='<label for="stResidentSearch">Buscar morador</label><input class="in" type="search" id="stResidentSearch" placeholder="Digite parte do nome"><label for="stResident">Morador em destaque</label><select class="in" id="stResident"></select>'}
  if(STUDIO.mode==='vote'||STUDIO.mode==='event'){
   const mode=STUDIO.mode;
-  extra+='<div class="bgrp">📝 Roteiro personalizado</div><label><input type="checkbox" id="stScriptMode"> Usar meu roteiro</label><div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], ['+(mode==='vote'?'VOTACAO':'EVENTO')+'], [CENA: FINAL]. Use também [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3], [ZOOM: 2] e [ESPERAR: 3]. O texto é exibido em sequência, sem voz.</p><textarea class="in" id="stScriptText" rows="11" style="width:100%;box-sizing:border-box"></textarea><button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button><button type="button" class="btn sm" id="stScriptSave">💾 Salvar roteiro</button></div>';
+  extra+='<div class="bgrp">📝 Roteiro personalizado</div><label><input type="checkbox" id="stScriptMode"> Usar meu roteiro</label><div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], ['+(mode==='vote'?'VOTACAO':'EVENTO')+'], [CENA: FINAL]. Use também [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3], [ZOOM: 2] e [ESPERAR: 3]. O texto é exibido em sequência, sem voz.</p><textarea class="in" id="stScriptText" rows="11" style="width:100%;box-sizing:border-box"></textarea><button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button></div>';
  }
  $('stExtra').innerHTML=extra;
  if(episodeMode){
-  $('stEpisodeVote').onchange=e=>{STUDIO.episodeVote=e.target.checked};
+  $('stEpisodeVote').onchange=e=>{STUDIO.episodeVote=e.target.checked;$('stEpisodeResult').hidden=!STUDIO.episodeVote};
   const field=$('stEpisodeWork');
   const selected=STUDIO.episodeCompletedWork;
   if(selected?.seed===seed&&bById.get(selected.id)?.done)field.value=String(selected.id);
@@ -3427,14 +3563,20 @@ function openRecMenu(){
  if(STUDIO.mode==='vote'||STUDIO.mode==='event'){
   const mode=STUDIO.mode,ta=$('stScriptText');
   ta.value=STUDIO_SCRIPTS[mode];
-  $('stScriptMode').onchange=()=>$('stScriptArea').style.display=$('stScriptMode').checked?'block':'none';
+  $('stScriptMode').checked=USE_STUDIO_SCRIPT[mode];
+  $('stScriptArea').style.display=USE_STUDIO_SCRIPT[mode]?'block':'none';
+  $('stScriptMode').onchange=e=>{
+   USE_STUDIO_SCRIPT[mode]=e.target.checked;
+   $('stScriptArea').style.display=e.target.checked?'block':'none';
+  };
   const persist=()=>{STUDIO_SCRIPTS[mode]=ta.value;try{localStorage.setItem('pixelandia-script-'+mode,ta.value)}catch(e){}};
-  ta.oninput=persist;$('stScriptSave').onclick=()=>{persist();alert('Roteiro salvo neste aparelho!')};
+  ta.oninput=persist;
   $('stScriptExample').onclick=()=>{
    if(ta.value.trim()&&!confirm('Substituir o roteiro atual?'))return;
    ta.value=mode==='vote'?'[CENA: VILA]\n'+voteStory().join('\n')+'\n\n[VOTACAO]':'[CENA: VILA]\\nTudo parecia tranquilo em Pixelândia... mas uma surpresa estava chegando!\\n\\n[EVENTO]\\nAtenção, moradores! Algo especial está acontecendo!\\n\\n[CENA: FINAL]\\nQue aventura! O que vocês acharam?';
    ta.value=ta.value.replace(/\\n/g,'\n');persist();
   };
+  mountSceneBuilder(mode);
  }
  if($('stNewProf')){ $('stNewName').value=SHORTS_DRAFT.name; $('stNewProf').value=SHORTS_DRAFT.prof; $('stNewSex').value=SHORTS_DRAFT.sex; $('stNewCustom').value=SHORTS_DRAFT.custom; $('stNewCustom').style.display=SHORTS_DRAFT.prof==='custom'?'block':'none'; $('stNewHandle').value=SHORTS_DRAFT.handle; $('stNewPet').value=SHORTS_DRAFT.pet; $('stNewProf').onchange=()=>{$('stNewCustom').style.display=$('stNewProf').value==='custom'?'block':'none'};$('stSeconds').value=String(ARRIVALS.seconds);$('stSeconds').onchange=()=>ARRIVALS.seconds=Number($('stSeconds').value);}
 
@@ -3443,8 +3585,7 @@ function openRecMenu(){
   $('stWelcomeStyle').onchange=()=>{WELCOME_STYLE=$('stWelcomeStyle').value;saveWelcomeDraft();welcomeQueueRender()};
   $('stSeconds').onchange=()=>{ARRIVALS.seconds=Number($('stSeconds').value);saveWelcomeDraft();welcomeQueueRender()};
   $('stQueueAdd').onclick=welcomeQueueAdd;welcomeQueueRender();
-  $('stScriptMode').checked=WELCOME_USE_SCRIPT;
-  $('stScriptArea').style.display=WELCOME_USE_SCRIPT?'block':'none';
+  $('stQueueBulk').onclick=welcomeBulkMenu;
   $('stScriptMode').onchange=()=>{
    WELCOME_USE_SCRIPT=$('stScriptMode').checked;
    $('stScriptArea').style.display=WELCOME_USE_SCRIPT?'block':'none';
@@ -3457,21 +3598,43 @@ function openRecMenu(){
    $('stWelcomeCount').after(replay);
   }
   $('stScriptText').value=WELCOME_SCRIPT;$('stScriptText').oninput=scriptSave;
-  $('stScriptSave').onclick=()=>{scriptSave();alert('Roteiro salvo neste aparelho!')};
   $('stScriptExample').onclick=()=>{if(!WELCOME_QUEUE.length){alert('Adicione os moradores primeiro.');return}if($('stScriptText').value.trim()&&!confirm('Substituir o texto atual?'))return;$('stScriptText').value=scriptSample();scriptSave()};
+  mountSceneBuilder('welcome');
  }
  if($('stVoteSeconds')){$('stVoteSeconds').value=String(STUDIO.voteSeconds);$('stVoteSeconds').onchange=()=>STUDIO.voteSeconds=Number($('stVoteSeconds').value);for(let i=0;i<3;i++){const field=$('stVote'+i);field.value=STUDIO.voteOptions[i];field.onchange=()=>STUDIO.voteOptions[i]=field.value;}}
- if($('stEvent')){$('stEvent').value=STUDIO.event;$('stEvent').onchange=e=>STUDIO.event=e.target.value}if($('stResident')){$('stResident').value=STUDIO.resident||String(npcs[0]?.id||'');STUDIO.resident=$('stResident').value;$('stResident').onchange=e=>STUDIO.resident=e.target.value}
+ if($('stEvent')){$('stEvent').value=STUDIO.event;$('stEvent').onchange=e=>STUDIO.event=e.target.value}
+ if($('stResident')){
+  const field=$('stResident'),search=$('stResidentSearch');
+  const filter=()=>{
+   const matches=npcs.filter(n=>norm(n.name).includes(norm(search.value)));
+   field.replaceChildren(...matches.map(n=>new Option(n.name,String(n.id))));
+   if(!matches.length)field.add(new Option(npcs.length?'Nenhum morador encontrado':'Adicione um morador primeiro',''));
+   if(matches.some(n=>String(n.id)===STUDIO.resident))field.value=STUDIO.resident;
+   STUDIO.resident=field.value;
+  };
+  search.oninput=filter;field.onchange=()=>{STUDIO.resident=field.value};filter();
+ }
  function updateSummary(){$('stSummary').textContent=`${STUDIO.format==='horizontal'?'YouTube 16:9':'Shorts 9:16'} · ${STUDIO.camera==='auto'?'câmera automática':STUDIO.camera==='manual'?'câmera manual':'câmera fixa'} · ${STUDIO.captions?'com':'sem'} legendas${STUDIO.mode==='welcome'?' · cadastro e chegada real de novo morador':STUDIO.mode==='invitation'?' · convite de 25s para mundo vazio':''}`;}updateSummary();
  }
  update();
- $('stStart').onclick=()=>{if(STUDIO.mode==='recap'){startDayRecap(recapHighlight);return}if(STUDIO.mode==='vote'){const vote=votePlan();if(vote)startVoteRecording(vote);return;}if(STUDIO.mode==='invitation'){inviteRecord();return}if(STUDIO.mode==='resident'&&!npcs.length){alert('Adicione um morador antes de gravar sua história.');return}const mode=STUDIO.mode;const eventScenes=mode==='event'?studioScriptRead('event'):null;if(eventScenes===false)return;
+ $('stStart').onclick=()=>{if(STUDIO.mode==='recap'){startDayRecap(recapHighlight);return}if(STUDIO.mode==='vote'){const vote=votePlan();if(vote)startVoteRecording(vote);return;}if(STUDIO.mode==='invitation'){inviteRecord();return}
+ const mode=STUDIO.mode,resident=mode==='resident'?npcs.find(n=>n.id===Number(STUDIO.resident)):null;
+ if(mode==='resident'&&!resident){alert('Escolha um morador para gravar.');return}
+ const eventScenes=mode==='event'?studioScriptRead('event'):null;if(eventScenes===false)return;
+ if(eventScenes){try{for(const scene of eventScenes)cameraScriptExtract(scene.lines)}catch(e){alert(e.message);return}}
  if(mode==='welcome'){welcomeStartBatch();return;}else ARRIVALS.active=false;
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
- if(mode==='event'){startRecEvent(STUDIO.event,eventScenes)}else{startRec(mode==='welcome'?false:STUDIO.camera==='auto'&&mode!=='free');if(REC&&mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}}}
+ if(mode==='event'){startRecEvent(STUDIO.event,eventScenes)}else{startRec(mode==='episode'&&STUDIO.camera==='auto');if(REC&&resident)focusStudioResident(resident)}
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;}
  };
- $('stPreview').onclick=()=>{if(STUDIO.mode==='vote'){const vote=votePlan();if(vote)votePreview(vote);return;}if(STUDIO.mode==='invitation'){INVITE_PREVIEW_CAM={x:cam.x,y:cam.y,z:cam.z};INVITE_PREVIEW_FOLLOW=follow;INVITE_PREVIEW_PIN=pinnedFollow;invitePreview();return}if(STUDIO.mode==='welcome'){welcomeGroupPreview();return}closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
+ $('stPreview').onclick=()=>{
+  if(STUDIO.mode==='vote'){const vote=votePlan();if(vote)votePreview(vote);return}
+  if(STUDIO.mode==='invitation'){INVITE_PREVIEW_CAM={x:cam.x,y:cam.y,z:cam.z};INVITE_PREVIEW_FOLLOW=follow;INVITE_PREVIEW_PIN=pinnedFollow;invitePreview();return}
+  if(STUDIO.mode==='welcome'){welcomeGroupPreview();return}
+  if(STUDIO.mode==='resident'){studioResidentPreview();return}
+  if(STUDIO.mode==='event'){studioEventOutline();return}
+  closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour();
+ };
 }
 
 // ================== BAIRROS ==================
@@ -3662,16 +3825,25 @@ $('recMenuBtn').onclick=openRecMenu;$('camBtn').onclick=openRecMenu;$('recBtn').
 
 // 📋 Adicionar vários
 const PROF_ALIAS={};for(const k in PROF){PROF_ALIAS[norm(k)]=k;PROF_ALIAS[norm(PROF[k].label)]=k;PROF_ALIAS[norm(PROF[k].labelF)]=k}for(const a of['vaqueiro','vaqueira','criador','criadora','pecuaria','rancheiro','rancheira'])PROF_ALIAS[norm(a)]='pecuarista';for(const a of['cacador','cacadora','cacador de cervos','arqueiro','arqueira'])PROF_ALIAS[norm(a)]='cacador';for(const a of['polisonografista','polissonografia','tecnico em polissonografia','tecnica em polissonografia','tecnico do sono','tecnica do sono'])PROF_ALIAS[norm(a)]='polissonografista';
-function parseSex(s,name){s=norm(s||'');if(/^(m|h|homem|masc|masculino|menino|ele)/.test(s))return'm';if(/^(f|mulher|fem|feminino|menina|ela)/.test(s))return'f';return /a$/i.test(name)?'f':'m'}
+function parseSex(s,name){s=norm(s||'');if(/^(f|mulher|fem|feminino|menina|ela)$/.test(s))return'f';if(/^(m|h|homem|masc|masculino|menino|ele)$/.test(s))return'm';return /a$/i.test(name)?'f':'m'}
+function parseBulkResident(line,nameLimit,professionLimit){
+ const [rawName,rawProfession='',sex]=line.split(/[,;\t]| - /).map(s=>s.trim());
+ const name=rawName.slice(0,nameLimit);
+ if(!name||badName(name)||badName(rawProfession))return null;
+ const prof=PROF_ALIAS[norm(rawProfession)];
+ return {name,prof:prof||'custom',custom:prof?'':(rawProfession||'Morador').slice(0,professionLimit),sex:parseSex(sex,name),handle:'',pet:''};
+}
 $('bulkBtn').onclick=()=>{
   modal(`<h3>📋 Adicionar vários moradores</h3><p style="font-size:14px;margin:0 0 6px">Um por linha: <b>Nome, profissão, sexo</b>. Profissão desconhecida vira "outra profissão"; sem sexo, eu adivinho pelo nome.</p>
   <textarea id="bk" placeholder="Lucas, lenhador, homem&#10;Ana, pedreira, mulher&#10;Pedro, minerador"></textarea>
   <div class="row" style="margin-top:8px"><button class="btn" id="bAdd">➕ Adicionar todos</button><button class="btn" id="bClose">Fechar</button></div><p id="bMsg" style="font-size:13px"></p>`);
   $('bClose').onclick=closeModal;
   $('bAdd').onclick=()=>{const lines=$('bk').value.split('\n').map(l=>l.trim()).filter(Boolean);let c=0,skipped=0;
-    for(const l of lines){const p=l.split(/[,;\t]| - /).map(s=>s.trim());const name=(p[0]||'').slice(0,18);if(!name)continue;
-      if(badName(name)||badName(p[1])){skipped++;continue}
-      const pk=PROF_ALIAS[norm(p[1]||'')];const prof=pk||(p[1]?'custom':'custom');addNPC(name,prof,parseSex(p[2],name),pk?'':(p[1]||'Morador').slice(0,20),true);c++}
+    for(const line of lines){
+      const draft=parseBulkResident(line,18,20);
+      if(!draft){skipped++;continue}
+      addNPC(draft.name,draft.prof,draft.sex,draft.custom,true);c++;
+    }
     assignHomes();npcVer++;refreshPanel(true);save();
     if(c){announce(`🎉 ${fmt(c)} novos moradores!`,`A vila agora tem ${fmt(npcs.length)} habitantes`);logEv(`📋 ${fmt(c)} moradores chegaram de uma vez`)}
     if(skipped){$('bMsg').textContent=`⚠️ ${skipped} nome(s) bloqueado(s) pelo filtro e não adicionado(s).`;$('bAdd').disabled=true;return}
