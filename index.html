@@ -2250,18 +2250,11 @@ function rr(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);
 const SAFE={top:0.11,bot:0.775,right:0.82};
 function wrapLines(g,t,maxW,maxL){const w=String(t).split(' '),L=[];let c='';for(const x of w){const tt=c?c+' '+x:x;if(g.measureText(tt).width>maxW&&c){L.push(c);c=x}else c=tt}L.push(c);if(L.length>maxL){const r=L.slice(maxL-1).join(' ');L.length=maxL-1;L.push(r)}return L}
 function drawCaption(g,W2,H2,s,title,sub,cta,age){
-  const a=clamp(age/0.4,0,1),x0=22*s,maxW=W2*SAFE.right-x0-10*s,pad=22*s;g.globalAlpha=a;
-  const tf=`700 ${36*s}px "Pixelify Sans",sans-serif`,sf=`600 ${25*s}px "Pixelify Sans",sans-serif`;
-  g.font=tf;const TL=title?wrapLines(g,title,maxW-pad*2,2):[];const tw=Math.max(0,...TL.map(l=>g.measureText(l).width));
-  g.font=sf;const SL=sub?wrapLines(g,sub,maxW-pad*2,2):[];const sw2=Math.max(0,...SL.map(l=>g.measureText(l).width));
-  const bw=Math.min(maxW,Math.max(tw,sw2)+pad*2),bh=18*s+TL.length*42*s+SL.length*31*s+14*s,yb=H2*SAFE.bot-12*s,y0=yb-bh+(1-a)*30*s,bx=x0+(maxW-bw)/2,cx=bx+bw/2;
-  g.fillStyle=cta?'rgba(79,154,52,.95)':'rgba(247,226,181,.97)';rr(g,bx,y0,bw,bh,16*s);g.fill();g.lineWidth=5*s;g.strokeStyle='#5e2f10';g.stroke();
-  g.textAlign='center';g.textBaseline='middle';let y=y0+18*s+21*s;
-  g.font=tf;g.fillStyle=cta?'#fff':'#3b2412';for(const l of TL){g.fillText(l,cx,y,bw-pad);y+=42*s}
-  y+=-6*s;g.font=sf;g.fillStyle=cta?'#fff8e0':'#8b4a1f';for(const l of SL){g.fillText(l,cx,y,bw-pad);y+=31*s}
-  g.globalAlpha=1}
-// Direção cinematográfica: personagem real percorre a estrada enquanto é filmado.
-// Rota de entrada usa SOMENTE ladrilhos de estrada, evitando cortar árvores.
+ g.save();g.globalAlpha=clamp(age/.4,0,1);
+ drawWelcomeCard(g,W2,H2,title||'',sub||'',.72,cta?'dark':'light');
+ g.restore();
+}
+
 function arrivalRoadRoute(fromX,fromY){
   const sx=Math.floor(fromX/T),sy=Math.floor(fromY/T),valid=(x,y)=>inB(x,y)&&ground[idx(x,y)]===G_PATH&&walkable(x,y);
   const q=[],seen=new Set(),prev=new Map();
@@ -2344,23 +2337,12 @@ function drawArrivalTag(g,W2,H2,s,n,age){
   g.restore();
 }
 function drawShortsCTA(g,W2,H2,s,age,duration){
-  // Convite aparece depois do salto, sem encobrir o momento da comemoração.
-  if(age<duration-2.7)return;
-  const a=clamp((age-(duration-2.7))/.4,0,1),pad=18*s;
-  g.save();g.globalAlpha=a;g.textAlign='center';g.textBaseline='middle';
-  const msg='Quer morar aqui? Comente nome e profissão!';
-  const w=Math.min(W2*.84,610*s),x=(W2-w)/2,h=112*s,y=H2*.70;
-  // Card de pergaminho no estilo dos painéis do Mundo Pixelândia.
-  g.shadowColor='rgba(0,0,0,.38)';g.shadowBlur=12*s;g.shadowOffsetY=6*s;
-  g.fillStyle='#5e2f10';rr(g,x-5*s,y-5*s,w+10*s,h+10*s,15*s);g.fill();
-  g.shadowColor='transparent';g.shadowBlur=0;g.shadowOffsetY=0;
-  g.fillStyle='#f7e2b5';rr(g,x,y,w,h,11*s);g.fill();
-  g.strokeStyle='#c99a5b';g.lineWidth=3*s;rr(g,x+7*s,y+7*s,w-14*s,h-14*s,8*s);g.stroke();
-  g.fillStyle='#3b2412';g.font=`700 ${29*s}px "Pixelify Sans",sans-serif`;
-  g.fillText('🏡 Quer morar aqui?',W2/2,y+37*s,w-2*pad);
-  g.fillStyle='#8b4a1f';g.font=`700 ${25*s}px "Pixelify Sans",sans-serif`;
-  g.fillText('Comente NOME + PROFISSÃO!',W2/2,y+78*s,w-2*pad);g.restore();
+ if(age<duration-2.7)return;
+ g.save();g.globalAlpha=clamp((age-(duration-2.7))/.4,0,1);
+ drawWelcomeCard(g,W2,H2,'🏡 Quer morar aqui?','Comente NOME + PROFISSÃO!',.72,'dark');
+ g.restore();
 }
+
 function shortsSceneFor(n,start,seconds){
   const route=arrivalRoadRoute(n.x,n.y),dist=[0];
   for(let i=1;i<route.length;i++)dist.push(dist[i-1]+Math.hypot(route[i].x-route[i-1].x,route[i].y-route[i-1].y));
@@ -2567,18 +2549,7 @@ function pxStoryOverlay(g,w,h,age){
  pxDrawStoryText(g,w,h,msg);
 }
 function pxDrawStoryText(g,w,h,msg){
- if(REC?.studioMode==='welcome'){drawWelcomeCard(g,w,h,msg,'',.24);return}
- const scale=w/720,maxW=w*.86,fs=Math.max(17,Math.round(25*scale));
- g.save();g.font=`700 ${fs}px "Pixelify Sans",sans-serif`;
- const words=msg.split(' '),lines=[];let line='';
- for(const word of words){const test=line?line+' '+word:word;if(g.measureText(test).width>maxW-38*scale&&line){lines.push(line);line=word}else line=test}
- if(line)lines.push(line);
- const lh=fs*1.27,boxH=lines.length*lh+28*scale,top=h*.78-boxH/2;
- g.fillStyle='rgba(35,23,14,.88)';rr(g,(w-maxW)/2,top,maxW,boxH,12*scale);g.fill();
- g.strokeStyle='#e9b768';g.lineWidth=2*scale;g.stroke();
- g.fillStyle='#fff2d2';g.textAlign='center';g.textBaseline='middle';
- lines.forEach((t,i)=>g.fillText(t,w/2,top+14*scale+lh*(i+.5),maxW-24*scale));
- g.restore();
+ drawWelcomeCard(g,w,h,msg,'',.24);
 }
 
 function recFrame(now){
@@ -3199,23 +3170,12 @@ function hookText(kind){
   return kind==='free'?'🎉 Chegou gente nova no Mundo Pixelândia!':'🌲 Esse mundo só cresce com os comentários 👇';
 }
 function drawHook(g,W2,H2,s,text,age){
-  if(age>3)return;const a=age<0.2?age/0.2:age>2.6?(3-age)/0.4:1,sc=age<0.2?0.85+age*0.75:1;
-  g.save();g.globalAlpha=clamp(a,0,1);g.translate(W2/2,H2*0.42);g.scale(sc,sc);
-  g.fillStyle='rgba(20,12,4,.78)';rr(g,-W2/2+30*s,-120*s,W2-60*s,240*s,22*s);g.fill();g.lineWidth=6*s;g.strokeStyle='#f6c344';g.stroke();
-  g.textAlign='center';g.textBaseline='middle';g.fillStyle='#f6c344';g.font=`700 ${30*s}px "Pixelify Sans",sans-serif`;g.fillText(`DIA ${day()} · ${villageName.toUpperCase()}`,0,-78*s,W2-110*s);
-  g.fillStyle='#fff';let fs=54;g.font=`700 ${fs*s}px "Pixelify Sans",sans-serif`;
-  const words=text.split(' '),lines=[];let cur='';for(const w of words){const t2=cur?cur+' '+w:w;if(g.measureText(t2).width>W2-120*s&&cur){lines.push(cur);cur=w}else cur=t2}lines.push(cur);
-  if(lines.length>2){fs=44;g.font=`700 ${fs*s}px "Pixelify Sans",sans-serif`}
-  const lh=fs*1.15*s,y0=-lh*(Math.min(lines.length,3)-1)/2+18*s;lines.slice(0,3).forEach((l,i)=>g.fillText(l,0,y0+i*lh,W2-100*s));
-  g.restore();
+ if(age>3)return;
+ g.save();g.globalAlpha=clamp(Math.min(age/.2,(3-age)/.4),0,1);
+ drawWelcomeCard(g,W2,H2,text,'',.42,'dark');
+ g.restore();
 }
 
-// formulário
-let sex='m';
-const sel=$('fProf');
-for(const k in PROF){const o=document.createElement('option');o.value=k;o.textContent=PROF[k].icon+' '+PROF[k].label;sel.appendChild(o)}
-{const o=document.createElement('option');o.value='custom';o.textContent='⭐ Outra profissão...';sel.appendChild(o)}
-sel.onchange=()=>{$('fCustom').style.display=sel.value==='custom'?'block':'none'};
 function updateProfLabels(){for(const o of sel.options){const P=PROF[o.value];if(P)o.textContent=P.icon+' '+(sex==='f'?P.labelF:P.label)}}
 document.querySelectorAll('[data-sex]').forEach(b=>b.onclick=()=>{sex=b.dataset.sex;document.querySelectorAll('[data-sex]').forEach(x=>x.classList.toggle('on',x===b));updateProfLabels()});
 let formPet=null;
