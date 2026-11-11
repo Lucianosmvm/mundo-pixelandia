@@ -2197,18 +2197,12 @@ function invitePreview(){
 let INVITE_PREVIEW_CAM={x:0,y:0,z:1},INVITE_PREVIEW_FOLLOW=null,INVITE_PREVIEW_PIN=false;
 function inviteRecord(){
  if(npcs.length){alert('O mundo já possui moradores. Grave o convite antes do primeiro cadastro.');return}
- const voice=studioPreparedVoice('invitation',studioVoiceScript('invitation'));
- if(voice===false){openRecMenu();return}
  STUDIO.mode='invitation';
  const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  closeModal();if(!inviteBegin(false)){soundRec=oldSound;delete STUDIO.restoreSound;return}
- startRec(false,'vertical',!!voice);
+ startRec(false,'vertical');
  if(!REC){TOUR=null;soundRec=oldSound;delete STUDIO.restoreSound;return}
  REC.inviteSeconds=INVITE.seconds;REC.hookKind='';REC.inviteMusicStep=-1;
- if(voice){
-  attachTourVoice(voice,voice.script.main);
-  REC.inviteSeconds=REC.tourDuration;
- }
 }
 function drawInviteSpot(){
   if(!TOUR||!TOUR.invite)return;const x=CX*T-10,y=CY*T+12,b=Math.round(Math.sin(gtime*3)*1.5);const dm=TOUR.demo;
@@ -2270,20 +2264,6 @@ function welcomeUpdateShot(shots,age){
  }
  return null;
 }
-function createWelcomeUpdate(start,shots,ballot){
- const ballotAt=shots.reduce((sum,shot)=>sum+shot.dur,0);
- return {start,shots,ballot,ballotAt,end:ballotAt+(ballot?VOTE_BALLOT_SECONDS:0)};
-}
-function drawWelcomeUpdate(g,w,h,age,update,closing){
- if(update.ballot&&age>=update.ballotAt){
-  drawVoteOverlay(g,w,h,age,{options:update.ballot,ballotAt:update.ballotAt});
- }else if(closing){
-  drawLivingInvite(g,w,h);
- }else if(STUDIO.captions){
-  const shot=welcomeUpdateShot(update.shots,age);
-  if(shot)drawWelcomeCard(g,w,h,shot.title,shot.sub,.73);
- }
-}
 function startWelcomeUpdate(now){
  const rec=REC;
  const residents=rec.welcomeReplay.ids.map(id=>npcs.find(n=>n.id===id)).filter(Boolean);
@@ -2295,29 +2275,15 @@ function startWelcomeUpdate(now){
    n.arrivalJump=0;n.moving=false;n.status='Novo morador';n.plan=[goNear(CX,CY,3)];
   }
  }
- const {result,ballot}=rec.welcomeReplay;
- rec.welcomeUpdate=createWelcomeUpdate(now,welcomeUpdateShots(result,residents),ballot);
- if(rec.voice){
-  const update=rec.welcomeUpdate;
-  update.shots.forEach((shot,i)=>{
-   shot.voice=voiceSection(rec.voice,rec.voice.script.updates[i],shot.dur);
-   shot.dur=shot.voice.duration;
-  });
-  update.ballotAt=update.shots.reduce((sum,shot)=>sum+shot.dur,0);
-  update.ballotVoice=ballot?voiceSection(rec.voice,rec.voice.script.ballot,VOTE_BALLOT_SECONDS):null;
-  update.inviteAt=update.ballotAt+(update.ballotVoice?.duration||0);
-  update.inviteVoice=voiceSection(rec.voice,rec.voice.script.closing,LIVING_INVITE_SECONDS);
-  update.end=update.inviteAt+update.inviteVoice.duration;
- }
+ rec.welcomeUpdate={start:now,shots:welcomeUpdateShots(rec.welcomeReplay.result,residents)};
 }
 function welcomeUpdateTick(now){
  const preview=WELCOME_PREVIEW;
  const update=preview?.welcomeUpdate||REC?.welcomeUpdate;
  if(!update||now<update.start||REC?.stopping)return;
- const age=(now-update.start)/1000;
- if(!preview&&age>=update.end){stopRec();return}
- const shot=welcomeUpdateShot(update.shots,age);
- if(shot&&shot!==update.current){
+ const shot=welcomeUpdateShot(update.shots,(now-update.start)/1000);
+ if(!shot){if(!preview)stopRec();return}
+ if(shot!==update.current){
   update.current=shot;
   cam.x=shot.x;cam.y=shot.y;cam.z=shot.z;
  }
@@ -2589,29 +2555,36 @@ function welcomeQueueRender(){
  if($('stWelcomeCount')){
   let style=$('stWelcomeStyle')?.value||'auto';if(style==='auto')style=WELCOME_QUEUE.length>=5?'group':'individual';
   const arrival=style==='individual'?9+WELCOME_QUEUE.length*ARRIVALS.seconds:welcomeGroupTiming(WELCOME_QUEUE.length,style==='express').cta;
-  const seconds=arrival+WELCOME_VILLAGE_SECONDS+(welcomeResultShot(STUDIO.welcomeResult)?WELCOME_RESULT_SECONDS:0)+(STUDIO.welcomeVote?VOTE_BALLOT_SECONDS:0)+LIVING_INVITE_SECONDS;
+  const seconds=arrival+WELCOME_VILLAGE_SECONDS+(welcomeResultShot(STUDIO.welcomeResult)?WELCOME_RESULT_SECONDS:0)+LIVING_INVITE_SECONDS;
   $('stArrivalDuration').hidden=style!=='individual';
+  $('stWelcomeScript').hidden=style!=='individual';
+  $('stScriptMode').checked=style==='individual'&&WELCOME_USE_SCRIPT;
+  $('stScriptArea').style.display=$('stScriptMode').checked?'block':'none';
   $('stWelcomeCount').textContent=WELCOME_QUEUE.length+' moradores · aproximadamente '+seconds+' segundos ('+(style==='individual'?'individual':style==='express'?'expressa':'em grupo')+')';
  }
-
+ const scene=$('stSceneSection');
+ if(scene){
+  const current=scene.value;
+  scene.replaceChildren(new Option('Vila','CENA: VILA'),...WELCOME_QUEUE.map(n=>new Option(n.name,'MORADOR: '+n.name)),new Option('Final','CENA: FINAL'));
+  if([...scene.options].some(option=>option.value===current))scene.value=current;
+ }
 }
 function welcomeStartBatch(replay=null){
  if(REC)return;
+ const scripted=!replay&&!!$('stScriptMode')?.checked;
  let scenes=replay?.scenes||null;
  let style=replay?.style||WELCOME_STYLE;
  const seconds=replay?.seconds||ARRIVALS.seconds;
  if(style==='auto')style=WELCOME_QUEUE.length>=5?'group':'individual';
+ if(scripted&&style!=='individual'){alert('Para chegada coletiva, desmarque o roteiro personalizado. A chegada individual continua disponível para roteiros por morador.');return}
 
+ if(scripted){scriptSave();try{scenes=scriptParse(WELCOME_SCRIPT)}catch(e){alert(e.message);return}}
 
  const residents=replay?.ids.map(id=>npcs.find(n=>n.id===id));
  if(replay&&(replay.seed!==seed||!residents.length||residents.some(n=>!n))){
   alert('Alguns moradores dessa gravação já não estão nesta vila.');return;
  }
  if(!replay&&!WELCOME_QUEUE.length){alert('Adicione pelo menos um morador à lista.');return}
- const ballot=replay?replay.ballot:STUDIO.welcomeVote?voteReadOptions('stWelcomeVoteOption'):null;
- if(!replay&&STUDIO.welcomeVote&&!ballot)return;
- const voice=studioPreparedVoice('welcome',welcomeVoiceScript(replay,ballot));
- if(voice===false)return;
  if(!canRecord()){alert('Este navegador não permite a gravação automática.');return}
  if(scenes){
   try{for(const scene of scenes)cameraScriptExtract(scene.lines)}
@@ -2620,7 +2593,7 @@ function welcomeStartBatch(replay=null){
  if(replay)Object.assign(STUDIO,replay.settings,{mode:'welcome'});
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  ARRIVALS.active=false;
- startRec(false,STUDIO.format,!!voice);
+ startRec(false);
  if(!REC){soundRec=oldSound;delete STUDIO.restoreSound;return}
  const added=residents||WELCOME_QUEUE.map(d=>{
   const n=addNPC(d.name,d.prof,d.sex,d.custom,true);
@@ -2641,40 +2614,23 @@ function welcomeStartBatch(replay=null){
   REC.arrivalId=null;REC.arrivalScene=null;REC.welcomeIntro=0;REC.story=null;
   follow=null;pinnedFollow=false;TOUR=null;
  }
- if(voice){
-  REC.voice=voice;
-  STUDIO.captions=true;
-  scenes=null;
-  voice.opening=voiceSection(voice,voice.script.opening,group?REC.groupWelcome.walkEnd:REC.welcomeIntro);
-  voice.entries=voice.script.entries.map(lines=>voiceSection(voice,lines,group?WELCOME_SPOTLIGHT_SECONDS:seconds));
-  if(group){
-   const G=REC.groupWelcome;
-   G.walkEnd=voice.opening.duration;
-   G.slotSeconds=Math.max(...voice.entries.map(entry=>entry.duration));
-   G.celebrate=G.walkEnd+G.slotSeconds*voice.entries.length;
-   voice.celebrate=voiceSection(voice,voice.script.celebrate,4);
-   G.cta=G.celebrate+voice.celebrate.duration;
-  }else{
-   REC.welcomeIntro=voice.opening.duration;
-   REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
-   REC.arrivalSeconds=voice.entries[0].duration;
-  }
- }
  if(scenes){
-  const intro=cameraScriptExtract(scenes.filter(x=>x.type==='village').flatMap(x=>x.lines));
-  const outro=cameraScriptExtract(scenes.filter(x=>x.type==='final').flatMap(x=>x.lines));
-  const entries=scenes.filter(x=>x.type==='resident').map(x=>cameraScriptExtract(x.lines));
-  REC.welcomeIntro=scriptDuration(intro.lines,6)+intro.extra;
-  REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
-  REC.arrivalSeconds=Math.max(seconds,...entries.map(entry=>scriptDuration(entry.lines,12)+entry.extra));
-  const outroSeconds=scriptDuration(outro.lines,4)+outro.extra;
-  setScriptCardTiming(intro,REC.welcomeIntro);
-  entries.forEach(entry=>setScriptCardTiming(entry,REC.arrivalSeconds));
-  setScriptCardTiming(outro,outroSeconds);
-  REC.customWelcome={intro,outro,entries,ending:outroSeconds+4};
-  REC.cameraTimeline=cameraScriptTimeline([intro,...entries,outro],0);
+  const intro=scenes.filter(x=>x.type==='village').flatMap(x=>x.lines);
+  const outro=scenes.filter(x=>x.type==='final').flatMap(x=>x.lines);
+  const entries=scenes.filter(x=>x.type==='resident');
+  REC.cameraTimeline=[];
+  let offset=0;
+  for(const sc of scenes.filter(x=>x.type!=='invite')){
+   const clean=cameraScriptExtract(sc.lines),dur=sc.type==='village'?scriptDuration(clean.lines,6)+clean.extra:sc.type==='resident'?Math.max(seconds,scriptDuration(clean.lines,12)+clean.extra):scriptDuration(clean.lines,4)+clean.extra;
+   for(const cue of clean.cues)if(cue.target||cue.zoom)REC.cameraTimeline.push({time:offset+Math.min(dur-1,cue.at/Math.max(1,clean.lines.length)*dur),target:cue.target||{x:cam.x,y:cam.y,z:cue.zoom}});
+   offset+=dur;
+  }
+  REC.cameraTimeline.sort((a,b)=>a.time-b.time);
+  REC.customWelcome={intro:cameraScriptExtract(intro).lines,outro:cameraScriptExtract(outro).lines,entries:entries.map(e=>({...e,lines:cameraScriptExtract(e.lines).lines})),invite:scenes.at(-1).lines,ending:Math.max(7,scriptDuration(cameraScriptExtract(outro).lines,4)+4)};
+  REC.welcomeIntro=scriptDuration(cameraScriptExtract(intro).lines,6)+cameraScriptExtract(intro).extra;REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
+  REC.arrivalSeconds=Math.max(seconds,...entries.map(x=>scriptDuration(cameraScriptExtract(x.lines).lines,12)+cameraScriptExtract(x.lines).extra));
  }
- REC.welcomeReplay=replay||{seed,ids:[...ARRIVALS.ids],style,scenes,seconds,result:STUDIO.welcomeResult,ballot,settings:{
+ REC.welcomeReplay=replay||{seed,ids:[...ARRIVALS.ids],style,scenes,seconds,result:STUDIO.welcomeResult,settings:{
   format:STUDIO.format,camera:STUDIO.camera,captions:STUDIO.captions,music:STUDIO.music,hud:STUDIO.hud
  }};
  save();
@@ -2682,7 +2638,6 @@ function welcomeStartBatch(replay=null){
   LAST_WELCOME=REC.welcomeReplay;
   WELCOME_QUEUE.length=0;
   STUDIO.welcomeResult='';
-  STUDIO.welcomeVote=false;
   saveWelcomeDraft();
  }
 }
@@ -2708,39 +2663,8 @@ function finishArrivalScene(R0){
 }
 
 /* Narrativa textual contextual para todos os formatos do Estúdio. */
-const EVENT_STORIES={
- fire:[
-  'Alguém viu aquela fumaça? A vila tem um incêndio!',
-  'Olha os baldes passando de mão em mão. Numa hora dessas, cada vizinho conta.',
-  'De olho em quem chegar para ajudar. Essa é a parte da história que vale lembrar.'
- ],
- rain:[
-  'O céu escureceu de uma vez… Lá vem a tempestade!',
-  'Quem saiu sem guarda-chuva vai chegar pingando. A horta, por outro lado, agradece.',
-  'Repara no chão e nos telhados. Até a praça parece outra com essa chuva.'
- ],
- snow:[
-  'Um floco, mais um… Está nevando em Pixelândia!',
-  'Olha os telhados ficando brancos. A praça parece cenário de cartão de Natal.',
-  'Se a gente pudesse guardar um pedacinho desse dia, eu escolheria a primeira nevada.'
- ],
- party:[
-  'Tem festa na praça! Pelo jeito, ninguém vai embora cedo hoje.',
-  'Olha a dança! Uns acertam o passo. Os outros inventam um novo.',
-  'Quando os fogos subirem, olha para o céu. A festa é de toda a vila!'
- ],
- chickens:[
-  'Quem deixou o galinheiro aberto? Tem galinha correndo por toda a vila!',
-  'Aquela ali dobrou a esquina! Quero ver quem consegue pegar mais.',
-  'Façam suas apostas. Quem vai sair dessa com fama de campeão das galinhas?'
- ],
- ufo:[
-  'Psiu… Vocês também viram aquela luz sobre a vila?',
-  'Aquilo está baixando. Eu ficaria longe desse feixe, só por garantia…',
-  'Se o disco levar alguém, já temos a primeira pergunta quando voltar. Como era lá dentro?'
- ]
-};
-function pxStoryText(mode=REC?.studioMode||STUDIO.mode){
+function pxStoryText(){
+ const mode=REC?.studioMode||STUDIO.mode;
  const count=npcs.length,finished=buildings.filter(b=>b.done).length;
  const houses=buildings.filter(b=>b.done&&isHouse(b.type)).length;
  const otherBuildings=finished-houses;
@@ -2754,43 +2678,20 @@ function pxStoryText(mode=REC?.studioMode||STUDIO.mode){
  vote:[`Nossa vila tem ${count} moradores, ${constructionSummary}.`,'Ainda precisamos de novos espaços para nossa comunidade!','Cada obra pode ajudar a vila, mas precisamos de profissionais para fazê-la funcionar.',`Qual será a próxima: 1, 2 ou 3? Vocês decidem!`,'Comente o número da obra que você quer construir!'],
  resident:[`Cada morador tem uma história. Hoje vamos conhecer ${name}!`,`${name} trabalha como ${job}.`,'Nossa comunidade cresce graças a pessoas como essa.','Vamos acompanhar um pouco do seu dia na vila!','Quem mais merece aparecer no próximo episódio?'],
  episode:[intro,`Já somos ${count} moradores e temos ${constructionSummary}.`,'A cada dia surgem novos desafios e oportunidades.','Cada profissão e cada obra faz a diferença!','O que vocês gostariam de ver no próximo capítulo?'],
- event:EVENT_STORIES[REC?.ev?.k||STUDIO.event]||['A vila está de olho na praça. Tem coisa acontecendo por aqui!'],
+ event:[`Nem todo dia é tranquilo em nossa vila de ${count} moradores!`,'Hoje aconteceu algo que merece um episódio especial.','Vamos acompanhar o que está acontecendo pelo mapa.','Cada acontecimento vira parte da história da comunidade.','O que vocês acharam deste momento?'],
  free:[`Bem-vindos de volta à nossa vila!`,`Hoje temos ${count} moradores, ${constructionSummary}.`,'Vamos dar uma volta e descobrir como estão as coisas.','Há sempre algum detalhe novo para observar.','Qual lugar devemos visitar no próximo vídeo?']
  };
  return base[mode]||base.free;
-}
-function welcomeOpeningStory(before,count,houses){
- const opening=before===0?'A estrada ainda está quieta. Hoje ela vai trazer os primeiros moradores da vila.':
-  before===1?'Até agora, uma pessoa dava vida à vila. Hoje chega companhia!':
-  `A vila já tinha ${fmt(before)} moradores. Olha quem vem aumentar essa turma!`;
- const homes=houses===0?'Ainda tem muita obra pela frente. Cada chegada muda o que a vila pode fazer.':
-  houses===1?'Já temos uma casa pronta. Aos poucos, esse lugar está ficando com cara de lar.':
-  `Já temos ${fmt(houses)} casas prontas. Vamos ver quem está chegando pela estrada!`;
- return [opening,homes,count===1?'Tem gente nova no caminho. Vamos conhecer quem chegou!':`São ${fmt(count)} novos moradores. Vamos conhecer a turma!`];
-}
-function welcomeResidentStory(resident,index){
- const role={
-  lenhador:'Os pedreiros vão gostar da notícia. Vai ter mais gente trazendo madeira para as obras!',
-  medico:'Boa notícia para quem vive na vila. Agora temos mais alguém para cuidar da saúde da turma!',
-  pedreiro:'Já imagino o barulho das marteladas. Tem mais alguém para ajudar nas próximas obras!',
-  pescador:'Quem passa pelo lago já sabe onde procurar. O peixe que se cuide!',
-  fazendeiro:'A horta ganhou reforço! Quero ver o que vai sair da próxima colheita.',
- };
- return [
-  index===0?`Olha só quem apareceu na estrada. É ${resident.name}!`:`Ainda tem gente chegando! Agora é a vez de ${resident.name}.`,
-  `${resident.name} chega para trabalhar como ${profLabel(resident)}.`,
-  role[resident.prof]||`A partir de hoje, ${resident.name} também faz parte da história da vila.`,
-  `A praça está logo ali. Boas-vindas, ${resident.name}!`
- ];
 }
 function pxStoryOverlay(g,w,h,age){
  if(!STUDIO.captions||!REC)return;
  if(REC.arrivalId&&ARRIVALS.active&&ARRIVALS.index===ARRIVALS.ids.length-1&&(performance.now()-REC.arrivalStart)/1000>=REC.arrivalSeconds+(REC.customWelcome?REC.customWelcome.ending-4:0))return;
  if(REC.customStudio){
   const sections=REC.customStudio.sections,section=sections.find(x=>age>=x.start&&age<x.start+x.duration)||sections.at(-1);
-  const msg=scriptCardAt(section,age-section.start);
-  if(msg)pxDrawStoryText(g,w,h,msg);
-  return;
+  const lines=section.lines;
+  if(!lines.length)return;
+  const elapsed=Math.max(0,age-section.start),msg=lines[Math.min(lines.length-1,Math.floor(elapsed/section.duration*lines.length))];
+  pxDrawStoryText(g,w,h,msg);return;
  }
  const parts=REC.story||(REC.story=pxStoryText());
  const total=REC.arrivalSeconds||REC.vote?.seconds||REC.inviteSeconds|| (REC.studioMode==='event'?45:REC.studioMode==='resident'?60:REC.studioMode==='episode'?90:45);
@@ -2799,19 +2700,29 @@ function pxStoryOverlay(g,w,h,age){
  if(REC.studioMode==='welcome'&&ARRIVALS.active){
   const i=ARRIVALS.index,n=npcs.find(x=>x.id===REC.arrivalId),count=ARRIVALS.ids.length;
   const intro=REC.welcomeIntro||0,local=age-((REC.arrivalStart-REC.start)/1000);
-  const before=REC.welcomeBefore??Math.max(0,npcs.length-count),homes=REC.welcomeBuildings??0;
+  const before=REC.welcomeBefore??Math.max(0,npcs.length-count),homes=REC.welcomeBuildings??0,other=REC.welcomeOtherBuildings??0;
   if(REC.customWelcome&&age<intro){
-    msg=scriptCardAt(REC.customWelcome.intro,age)||'Hoje a vila vai receber novos moradores!';
+    const lines=REC.customWelcome.intro;
+    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(age/Math.max(1,intro)*lines.length))]:'Hoje a vila vai receber novos moradores!';
   }else if(REC.customWelcome&&local>=REC.arrivalSeconds&&i===count-1){
-    msg=scriptCardAt(REC.customWelcome.outro,local-REC.arrivalSeconds)||'';
+    const lines=REC.customWelcome.outro,endAge=local-REC.arrivalSeconds;
+    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(endAge/Math.max(1,REC.customWelcome.ending-4)*lines.length))]:'';
   }else if(REC.customWelcome&&n&&age>=intro){
-    msg=scriptCardAt(REC.customWelcome.entries[i],local)||'Chegou '+n.name+'!';
+    const lines=REC.customWelcome.entries[i].lines;
+    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(Math.max(0,local)/Math.max(1,REC.arrivalSeconds)*lines.length))]:'Chegou '+n.name+'!';
   }else if(age<intro){
-    const lines=welcomeOpeningStory(before,count,homes);
+    const scene=before===0
+      ?'Até agora, nossa vila estava esperando seus primeiros habitantes...'
+      :before===1?'Nossa vila começou com apenas um morador, mas já tem muita história para contar!'
+      :'A vida segue agitada por aqui! Nossa vila já tinha '+before+' moradores.';
+    const structures=homes===0?'Ainda não temos casas prontas, mas há muito espaço para crescer!':homes===1?'Já temos uma casa pronta!':'Já temos '+homes+' casas prontas!';
+    const lines=[scene,structures,'E adivinhem? Hoje a estrada vai ficar movimentada!','Temos '+count+' '+(count===1?'novo morador chegando!':'novos moradores chegando!')+' Vamos conhecer cada um!'];
     msg=lines[Math.min(lines.length-1,Math.floor(age/intro*lines.length))];
   }else if(n){
-    const stages=welcomeResidentStory(n,i);
+    const job=profLabel(n),first=i===0?'E lá vem a primeira novidade!':'E a nossa história continua! Chegou a vez do '+(i+1)+'º morador!';
+    const stages=[first,'Olha quem apareceu: '+n.name+'!','Com a profissão de '+job+', '+n.name+' traz novos talentos para a vila!','Agora é hora de atravessar a estrada e conhecer a praça!','Que chegada especial! Boas-vindas, '+n.name+'!'];
     msg=stages[Math.min(stages.length-1,Math.floor(Math.max(0,local)/Math.max(1,REC.arrivalSeconds/stages.length)))];
+    if(i===count-1&&local>=REC.arrivalSeconds)msg='Uau! Agora somos '+npcs.length+' moradores! E essa aventura está só começando!';
   }
  }if(!msg)return;
  pxDrawStoryText(g,w,h,msg);
@@ -2834,54 +2745,31 @@ function recFrame(now){
   }
   const hAge=(now-REC.start)/1000;
   if(REC.welcomeUpdate){
-    const update=REC.welcomeUpdate;
-    const age=(now-update.start)/1000;
-    if(REC.voice){
-      if(age>=update.inviteAt){drawLivingInvite(g,W2,H2);drawVoiceSection(g,W2,H2,REC.voice,update.inviteVoice,age-update.inviteAt,null)}
-      else if(update.ballot&&age>=update.ballotAt){
-        drawWelcomeUpdate(g,W2,H2,age,update,false);
-        drawVoiceSection(g,W2,H2,REC.voice,update.ballotVoice,age-update.ballotAt,null);
-      }else{
-        let local=age;
-        for(const shot of update.shots){
-          if(local<shot.dur){drawVoiceSection(g,W2,H2,REC.voice,shot.voice,local);break}
-          local-=shot.dur;
-        }
-      }
-    }else drawWelcomeUpdate(g,W2,H2,age,update,REC.stopping);
-    if(update.ballot&&age>=update.ballotAt+VOTE_BALLOT_FADE)REC.shownBallot=update.ballot;
+    const shot=REC.welcomeUpdate.current;
+    if(REC.stopping)drawLivingInvite(g,W2,H2);
+    else if(shot&&STUDIO.captions)drawWelcomeCard(g,W2,H2,shot.title,shot.sub,.73);
     $('recBtn').textContent=`⏹ Parar ${Math.floor(hAge)}s`;
     return;
   }
   if(REC.groupWelcome&&REC.stopping){drawLivingInvite(g,W2,H2);return}
   if(REC.dayRecap){
     if(REC.stopping)drawShortsCTA(g,W2,H2,s,(now-REC.dayRecap.inviteAt)/1000+1.3,4);
-    else if(REC.voice){
-      const recap=REC.dayRecap;
-      if(recap.morningAt!=null)drawVoiceSection(g,W2,H2,REC.voice,REC.voice.morning,(now-recap.morningAt)/1000);
-      else if(recap.nightStarted){
-        const nightAge=(now-recap.nightAt)/1000;
-        if(nightAge<REC.voice.night.duration)drawVoiceSection(g,W2,H2,REC.voice,REC.voice.night,nightAge);
-        else drawDayRecap(g,W2,H2,recap,now);
-      }else drawVoiceSection(g,W2,H2,REC.voice,REC.voice.opening,hAge);
-    }else drawDayRecap(g,W2,H2,REC.dayRecap,now);
+    else drawDayRecap(g,W2,H2,REC.dayRecap,now);
     $('recBtn').textContent=`⏹ Parar ${Math.floor(hAge)}s`;
     return;
   }
   // anúncio
-  if(STUDIO.captions&&ANN&&!REC.voice&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
+  if(STUDIO.captions&&ANN&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
     g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;const tw=Math.min(W2-60*s,Math.max(g.measureText(ANN.t).width,(g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`,g.measureText(ANN.s).width))+60*s);
     g.fillStyle='#f7e2b5';rr(g,-tw/2,-62*s,tw,124*s,16*s);g.fill();g.lineWidth=6*s;g.strokeStyle='#8b4a1f';g.stroke();g.textAlign='center';g.fillStyle='#3b2412';g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.t,0,-16*s,tw-30*s);
     g.fillStyle='#8b4a1f';g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.s,0,32*s,tw-30*s);g.restore()}}
-  if(STUDIO.captions&&TOUR&&!REC.voice&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else if(!REC.voice)drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
+  if(STUDIO.captions&&TOUR&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
   if(REC.vote){
     drawVoteOverlay(g,W2,H2,hAge,REC.vote);
-    if(REC.vote.voice&&!REC.stopping)playStudioVoice(REC.vote.voice,hAge,RECDEST);
-    if(hAge>=REC.vote.ballotAt+VOTE_BALLOT_FADE)REC.shownBallot=REC.vote.options;
     if(STUDIO.music&&Math.floor(hAge/5)!==REC.vote.musicStep&&hAge<REC.vote.seconds-2){REC.vote.musicStep=Math.floor(hAge/5);sfx('tune')}
     if(hAge>=REC.vote.seconds&&!REC.stopping)stopRec();
   }
-  if(REC.inviteSeconds){if(!REC.voice)inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if((REC.voice?TOUR?.hold:hAge>=REC.inviteSeconds)&&!REC.stopping)stopRec()}
+  if(REC.inviteSeconds){inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.inviteSeconds&&!REC.stopping)stopRec()}
   if(REC.arrivalId&&!REC.groupWelcome){
     if(!REC.arrivalScene&&now>=REC.arrivalStart){
       const first=npcs.find(x=>x.id===REC.arrivalId);
@@ -2897,7 +2785,6 @@ function recFrame(now){
       if(ARRIVALS.index+1<ARRIVALS.ids.length){
         finishArrivalScene({arrivalScene:REC.arrivalScene});
         ARRIVALS.index++;REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.arrivalStart=now;
-        if(REC.voice)REC.arrivalSeconds=REC.voice.entries[ARRIVALS.index].duration;
         const next=npcs.find(x=>x.id===REC.arrivalId);
         if(next){next.status='Chegando à vila';REC.arrivalScene=shortsSceneFor(next,now,REC.arrivalSeconds)}
       }else if(REC.welcomeReplay&&age>=REC.arrivalSeconds+(REC.customWelcome?REC.customWelcome.ending-4:0)){
@@ -2905,75 +2792,41 @@ function recFrame(now){
       }else if(age>=REC.arrivalSeconds+(REC.customWelcome?.ending||4))stopRec();
     }
   }
-  if(STUDIO.captions&&!REC.voice&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
-  if(REC.voice){
-    const voice=REC.voice,group=REC.groupWelcome;
-    if(group){
-      const slot=welcomeSpotlight(group,hAge);
-      if(hAge<group.walkEnd)drawVoiceSection(g,W2,H2,voice,voice.opening,hAge);
-      else if(slot>=0)drawVoiceSection(g,W2,H2,voice,voice.entries[slot],hAge-group.walkEnd-slot*group.slotSeconds);
-      else drawVoiceSection(g,W2,H2,voice,voice.celebrate,hAge-group.celebrate);
-    }else if(REC.arrivalId){
-      if(hAge<REC.welcomeIntro)drawVoiceSection(g,W2,H2,voice,voice.opening,hAge);
-      else drawVoiceSection(g,W2,H2,voice,voice.entries[ARRIVALS.index],(now-REC.arrivalStart)/1000);
-    }else if(voice.tour&&TOUR){
-      const step=TOUR.steps[TOUR.i];
-      if(step.voice)drawVoiceSection(g,W2,H2,voice,step.voice,TOUR.t);
-      else if(step.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);
-      else drawCaption(g,W2,H2,s,step.title,capSub(step),step.cta,TOUR.t);
-    }else if(!voice.main||hAge<voice.main.duration)drawVoiceSection(g,W2,H2,voice,voice.main,hAge);
-  }
-  else if(REC.groupWelcome&&STUDIO.captions)drawWelcomeGroup(g,W2,H2,hAge,REC.groupWelcome);
+  if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
+  if(REC?.groupWelcome&&STUDIO.captions)drawWelcomeGroup(g,W2,H2,hAge,REC.groupWelcome);
  else if(REC&&!REC.vote&&REC.studioMode!=='vote'&&(!REC.auto||!TOUR))pxStoryOverlay(g,W2,H2,hAge);
   // No encerramento, esconder a legenda narrativa e manter o convite por cima.
-  if(REC&&!REC.voice&&REC.arrivalId&&STUDIO.captions&&ARRIVALS.index===ARRIVALS.ids.length-1){
+  if(REC&&REC.arrivalId&&STUDIO.captions&&ARRIVALS.index===ARRIVALS.ids.length-1){
     const finalAge=(now-REC.arrivalStart)/1000-REC.arrivalSeconds;
     if(finalAge>=(REC.customWelcome?REC.customWelcome.ending-4:0))drawShortsCTA(g,W2,H2,s,finalAge-(REC.customWelcome?REC.customWelcome.ending-4:0),4);
   }
   // Episódios automáticos: encerramento fixo, idêntico ao convite da prévia.
-  if(REC.auto&&REC.tourDuration&&(REC.voice?TOUR?.hold:hAge>=REC.tourDuration)&&!REC.stopping)stopRec();
+  if(REC&&REC.auto&&REC.tourDuration&&hAge>=REC.tourDuration&&!REC.stopping)stopRec();
   // marca d'água
   if(STUDIO.captions){g.textAlign='center';g.textBaseline='middle';g.font=`700 ${28*s}px "Pixelify Sans",sans-serif`;g.lineWidth=6*s;g.strokeStyle='rgba(30,18,8,.8)';
   }
   if(REC.ev){const e=REC.ev,el2=(now-e.t0)/1000,on=evActive(e.k);if(on)e.seen=true;
-    if(REC.customStudio?.voice&&!REC.stopping)playStudioVoice(REC.customStudio.voice,hAge,RECDEST);
     const lim={rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[e.k]||60;
     if((e.seen&&!on&&!e.end)){e.end=now}if(REC.customStudio){if((now-REC.start)/1000>=REC.customStudio.duration)stopRec()}else if((e.end&&now-e.end>3500)||el2>lim){stopRec();return}}
   const el=(now-REC.start)/1000;$('recBtn').textContent=`⏹ Parar ${Math.floor(el/60)}:${String(Math.floor(el%60)).padStart(2,'0')}`;
-  const timeLimit=REC.voice?.tour&&TOUR?Infinity:REC.tourDuration?REC.tourDuration+5:REC.studioMode==='resident'?300:REC.studioMode==='free'?600:180;
-  if(!REC.groupWelcome&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!REC.ev&&el>timeLimit)stopRec();
+  if(!REC.groupWelcome&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!REC.ev&&el>(REC.tourDuration?REC.tourDuration+5:STUDIO.mode==='resident'?300:STUDIO.mode==='free'?600:180))stopRec();
 }
 function canRecord(){return !!(cv.captureStream&&window.MediaRecorder)}
-function startRecEvent(k,plan){
- startRec(false,STUDIO.format,!!plan?.voice);
- if(!REC)return;
- TOUR=null;follow=null;pinnedFollow=false;
- REC.hookKind=k;REC.hook=hookText(k);
- REC.ev={k,t0:performance.now(),seen:false};
- studioScriptAttach(plan);
- const recording=REC;
- setTimeout(()=>{if(REC===recording&&!REC.stopping)startEvent(k)},REC.customStudio?REC.customStudio.mainStart*1000:1500);
-}
+function startRecEvent(k,scenes){startRec(false);if(!REC)return;REC.hookKind=k;REC.hook=hookText(k);REC.ev={k,t0:performance.now(),seen:false};if(scenes)studioScriptAttach(scenes,'event');const R0=REC;setTimeout(()=>{if(REC===R0)startEvent(k)},scenes?REC.customStudio.mainStart*1000:1500)}
 function evActive(k){return k==='fire'?!!EV.fire:k==='party'?EV.party>0:k==='chickens'?EV.chickens.length>0:k==='ufo'?!!EV.ufo:k==='rain'?EV.rain>0:k==='snow'?EV.snow>0:false}
-function startRec(auto,format=STUDIO.format,withVoice=false){
+function startRec(auto,format=STUDIO.format){
   if(!canRecord()){modal(`<h3><span>🎬 Gravar vídeo</span><button class="btn sm" id="mX">✕</button></h3><p>Este aparelho não deixa o jogo gravar a si mesmo. Use o gravador de tela do celular e o botão ▶️ Passeio automático.</p>`);$('mX').onclick=closeModal;return}
   const c=document.createElement('canvas');const horizontal=format==='horizontal';c.width=horizontal?1280:720;c.height=horizontal?720:1280;const g=c.getContext('2d');
-  audioInit();const hasA=(soundRec||withVoice)&&RECDEST&&RECDEST.stream.getAudioTracks().length>0;
-  if(withVoice&&!hasA){alert('Este navegador não permite incluir a narração na gravação.');return}
+  audioInit();const hasA=soundRec&&RECDEST&&RECDEST.stream.getAudioTracks().length>0;
   const types=hasA?['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4']:['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4;codecs=avc1.42E01E','video/mp4'];let mime='';for(const t of types)if(MediaRecorder.isTypeSupported(t)){mime=t;break}
   let mr;try{const vs=c.captureStream(30),tr=[...vs.getVideoTracks()];if(hasA)tr.push(...RECDEST.stream.getAudioTracks());const stream=new MediaStream(tr);mr=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:5000000,videoKeyFrameIntervalDuration:1000}:undefined)}catch(e){modal(`<h3>🎬 Gravar vídeo</h3><p>Não deu para gravar aqui (${esc(e.message||e)}). Use o gravador de tela do celular.</p><button class="btn" id="mX">Fechar</button>`);$('mX').onclick=closeModal;return}
-  const R0={c,g,mr,chunks:[],start:performance.now(),recordDay:day(),auto,studioMode:STUDIO.mode,hookKind:auto?'tour':'free',ext:(mr.mimeType||mime).includes('mp4')?'mp4':'webm'};
-  mr.ondataavailable=e=>{if(e.data&&e.data.size)R0.chunks.push(e.data)};
-  mr.onstop=()=>finishRec(R0);
-  try{mr.start(500)}catch(e){
-    modal(`<h3>🎬 Gravar vídeo</h3><p>Não deu para iniciar a gravação (${esc(e.message||e)}).</p><button class="btn" id="mX">Fechar</button>`);
-    $('mX').onclick=closeModal;return;
-  }
-  REC=R0;
+  REC={c,g,mr,chunks:[],start:performance.now(),recordDay:day(),auto,studioMode:STUDIO.mode,hookKind:auto?'tour':'free',ext:(mr.mimeType||mime).includes('mp4')?'mp4':'webm'};
+  mr.ondataavailable=e=>{if(e.data&&e.data.size)REC&&REC.chunks.push(e.data)};
+  const R0=REC;mr.onstop=()=>finishRec(R0);
   if(!$('panel').classList.contains('hidden'))togglePanel();
   $('camBtn').style.display='none';$('recBtn').style.display='block';
   if(ARRIVALS.active&&STUDIO.mode==='welcome')configureWelcomeArrival(ARRIVALS.seconds);
-  recFrame(performance.now());
+  recFrame(performance.now());mr.start(500);
   if(auto&&!REC.arrivalId){if(STUDIO.mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}else startTour()}else startTour();if(TOUR)REC.tourDuration=TOUR.steps.reduce((sum,step)=>sum+step.dur,0)}if(STUDIO.mode==='welcome'&&!npcs.length&&!auto)startTour();
 }
 function configureWelcomeArrival(seconds){
@@ -2986,9 +2839,6 @@ function configureWelcomeArrival(seconds){
     cam.x=CX*T+8;cam.y=CY*T+8;cam.z=isMobile()?1.8:2.2;
 }
 function stopRec(){if(!REC||REC.stopping)return;REC.stopping=true;$('recBtn').style.display='none';
-  stopStudioVoice(REC.vote?.voice);
-  stopStudioVoice(REC.customStudio?.voice);
-  stopStudioVoice(REC.voice);
   if(REC.dayRecap)REC.dayRecap.inviteAt=performance.now();
   // grava um pouquinho a mais: o gravador do celular perde o finalzinho do vídeo ao parar
   setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const {resident:n} of R0.groupWelcome.members){n.arrivalJump=0;n.moving=false;n.status='Novo morador';n.plan=[goNear(CX,CY,3)]}save();refreshPanel(true)}$('recBtn').style.display='none';$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},(REC.dayRecap||REC.groupWelcome||REC.welcomeUpdate)?4000:REC.ext==='mp4'?3500:900)}
@@ -3098,10 +2948,9 @@ async function finishRec(R0){
   if(R0.welcomeReplay)$('vReplay').onclick=()=>{welcomeStartBatch(R0.welcomeReplay);if(REC)URL.revokeObjectURL(url)};
   $('vCopy').onclick=async()=>{
    const names=(R0.welcomeReplay?.ids||[arrivalNpc?.id]).map(id=>npcs.find(n=>n.id===id)?.name).filter(Boolean);
-   const vote=R0.shownBallot?.map((key,i)=>`${i+1}. ${BT[key].label}`).join('\n');
-   const title=names.length&&vote?'Novos moradores e votação em Pixelândia':vote?'Qual será a próxima obra de Pixelândia?':names.length?'Novos moradores em Pixelândia':R0.dayRecap?`Da noite ao amanhecer em Pixelândia · Dia ${videoDay}`:`Mundo Pixelândia · Dia ${videoDay}`;
-   const intro=names.length?`Boas-vindas a ${names.join(', ')}!`:R0.dayRecap?.highlight?.t||'Acompanhe a vida em Pixelândia.';
-   const detail=vote?`${names.length?intro+'\n\n':''}${vote}\n\nVote nos comentários com 1, 2 ou 3.`:`${intro}\n\nComente seu nome e profissão para morar na vila.`;
+   const vote=R0.vote?.options.map((key,i)=>`${i+1}. ${BT[key].label}`).join('\n');
+   const title=vote?'Qual será a próxima obra de Pixelândia?':names.length?'Novos moradores em Pixelândia':R0.dayRecap?`Da noite ao amanhecer em Pixelândia · Dia ${videoDay}`:`Mundo Pixelândia · Dia ${videoDay}`;
+   const detail=vote?`${vote}\n\nVote nos comentários com 1, 2 ou 3.`:names.length?`Boas-vindas a ${names.join(', ')}!\n\nComente seu nome e profissão para morar na vila.`:`${R0.dayRecap?.highlight?.t||'Acompanhe a vida em Pixelândia.'}\n\nComente seu nome e profissão para morar na vila.`;
    const copy=title+'\n\n'+detail;
    try{await navigator.clipboard.writeText(copy);$('vMsg').textContent='Título e descrição copiados.'}
    catch(e){prompt('Copie o título e a descrição',copy)}
@@ -3109,8 +2958,6 @@ async function finishRec(R0){
   $('vSave').onclick=()=>doSave(blob,'');$('vSaveO').onclick=()=>doSave(orig,'-original');
 }
 const ARRIVALS={ids:[],index:0,active:false,seconds:20};
-let ARRIVAL_PREVIEW=null;
-const SHORTS_DRAFT={name:'Heitor',prof:'lenhador',custom:'',sex:'m',handle:'',pet:''};
 let WELCOME_STYLE='auto';
 let WELCOME_PREVIEW=null;
 const LIVING_INVITE_SECONDS=4;
@@ -3141,7 +2988,7 @@ function createWelcomeGroup(residents,express,ratio){
 }
 function welcomeSpotlight(group,age){
  if(age<group.walkEnd||age>=group.celebrate)return -1;
- return Math.floor((age-group.walkEnd)/(group.slotSeconds||WELCOME_SPOTLIGHT_SECONDS));
+ return Math.floor((age-group.walkEnd)/WELCOME_SPOTLIGHT_SECONDS);
 }
 function welcomeGroupTick(now){
  const R=WELCOME_PREVIEW||REC;if(!R?.groupWelcome||R.stopping)return;
@@ -3220,15 +3067,19 @@ function drawWelcomeGroup(g,w,h,age,G){
 function welcomeGroupPreview(){
  const count=WELCOME_QUEUE.length;
  if(!count){alert('Adicione pelo menos um morador à lista.');return}
- const ballot=STUDIO.welcomeVote?voteReadOptions('stWelcomeVoteOption'):null;
- if(STUDIO.welcomeVote&&!ballot)return;
  const style=WELCOME_STYLE;
- if(style==='individual'||(style==='auto'&&count<5)){
-  const houses=buildings.filter(b=>b.done&&isHouse(b.type)).length;
-  const lines=[...welcomeOpeningStory(npcs.length,count,houses),...WELCOME_QUEUE.flatMap(welcomeResidentStory)];
-  const rows=lines.map(line=>'<li>'+esc(line)+'</li>');
+ if($('stScriptMode').checked||style==='individual'||(style==='auto'&&count<5)){
+  const scripted=$('stScriptMode').checked;
+  let scenes=null;
+  if(scripted){
+   scriptSave();
+   try{scenes=scriptParse(WELCOME_SCRIPT)}catch(e){alert(e.message);return}
+  }
+  const rows=scenes
+   ?scenes.filter(scene=>scene.type!=='invite').map(scene=>'<li><b>'+esc(scene.name||({village:'Abertura',final:'Encerramento'}[scene.type]||scene.type))+'</b> '+esc(scene.lines.join(' '))+'</li>')
+   :['Abertura na vila',...WELCOME_QUEUE.map(d=>d.name+' · '+(d.custom||PROF[d.prof]?.label||d.prof)+' · '+ARRIVALS.seconds+' s')].map(line=>'<li>'+esc(line)+'</li>');
   for(const shot of welcomeUpdateShots(STUDIO.welcomeResult,WELCOME_QUEUE,true))rows.push('<li>'+esc(shot.title+' · '+shot.sub)+'</li>');
-  rows.push(ballot?`<li>Votação · ${ballot.map((key,i)=>esc((i+1)+'. '+BT[key].label)).join(' · ')} · Comente 1, 2 ou 3</li>`:'<li>Convite para morar na vila</li>');
+  rows.push('<li>Convite para morar na vila</li>');
   modal('<h3><span>Roteiro de boas-vindas</span><button class="btn sm" id="mX">✕</button></h3><ol>'+rows.join('')+'</ol><button class="btn" id="stBack">Voltar ao Estúdio</button>');
   $('mX').onclick=$('stBack').onclick=openRecMenu;
   return;
@@ -3250,8 +3101,8 @@ function welcomeGroupPreview(){
  const canvas=layer.querySelector('canvas');canvas.width=w;canvas.height=h;
  const g=canvas.getContext('2d');
  const start=performance.now(),shots=welcomeUpdateShots(STUDIO.welcomeResult,residents,true);
- const update=createWelcomeUpdate(start+groupWelcome.cta*1000,shots,ballot);
- const preview={groupWelcome,start,raf:0,welcomeUpdate:update};
+ const updateDuration=shots.reduce((sum,shot)=>sum+shot.dur,0);
+ const preview={groupWelcome,start,raf:0,welcomeUpdate:{start:start+groupWelcome.cta*1000,shots}};
  WELCOME_PREVIEW=preview;
  function stop(){
   cancelAnimationFrame(preview.raf);WELCOME_PREVIEW=null;layer.remove();
@@ -3264,9 +3115,13 @@ function welcomeGroupPreview(){
   const age=(now-preview.start)/1000;
   const sw=cv.width,sh=cv.height,cropW=Math.min(sw,sh*w/h),cropH=cropW*h/w;
   g.drawImage(cv,(sw-cropW)/2,(sh-cropH)/2,cropW,cropH,0,0,w,h);
-  if(now>=update.start)drawWelcomeUpdate(g,w,h,(now-update.start)/1000,update,age>=groupWelcome.cta+update.end);
-  else if(STUDIO.captions)drawWelcomeGroup(g,w,h,age,groupWelcome);
-  if(age>=groupWelcome.cta+update.end+LIVING_INVITE_SECONDS)stop();
+  if(age>=groupWelcome.cta+updateDuration)drawLivingInvite(g,w,h);
+  else if(STUDIO.captions){
+   const shot=welcomeUpdateShot(shots,age-groupWelcome.cta);
+   if(age>=groupWelcome.cta&&shot)drawWelcomeCard(g,w,h,shot.title,shot.sub,.73);
+   else drawWelcomeGroup(g,w,h,age,groupWelcome);
+  }
+  if(age>=groupWelcome.cta+updateDuration+LIVING_INVITE_SECONDS)stop();
   else preview.raf=requestAnimationFrame(tick);
  }
  layer.querySelector('button').onclick=stop;
@@ -3275,15 +3130,19 @@ function welcomeGroupPreview(){
 
 const WELCOME_QUEUE=[];
 const WELCOME_DRAFT_KEY='pixelandia-welcome-draft';
-let LAST_WELCOME=null;
+let LAST_WELCOME=null,WELCOME_USE_SCRIPT=false;
 function saveWelcomeDraft(){
  try{
   localStorage.setItem(WELCOME_DRAFT_KEY,JSON.stringify({
    queue:WELCOME_QUEUE,last:LAST_WELCOME,style:WELCOME_STYLE,seconds:ARRIVALS.seconds,
-   format:STUDIO.format
+   format:STUDIO.format,useScript:WELCOME_USE_SCRIPT
   }));
  }catch(e){}
 }
+const SCRIPT_KEY='pixelandia-welcome-script-v1';
+let WELCOME_SCRIPT='';
+try{WELCOME_SCRIPT=localStorage.getItem(SCRIPT_KEY)||''}catch(e){}
+const STUDIO_SCRIPTS={vote:'',event:''};
 function cameraScriptTarget(raw){
  const name=raw.trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
  if(name==='vila'||name==='centro'||name==='praca')return {x:CX*T+8,y:CY*T+8,z:2.2};
@@ -3329,25 +3188,6 @@ function cameraScriptExtract(lines){
  }
  return {lines:text,cues,extra:cues.reduce((n,c)=>n+(c.wait||0),0)};
 }
-function scriptDuration(lines,min){return Math.max(min,lines.join(' ').length/13+2)}
-function setScriptCardTiming(section,duration,audio){
- const holds=section.lines.map(()=>0);
- for(const cue of section.cues)if(cue.wait&&holds.length)holds[Math.min(cue.at,holds.length-1)]+=cue.wait;
- const base=holds.length?Math.max(0,duration-holds.reduce((sum,hold)=>sum+hold,0))/holds.length:0;
- let start=0;
- section.cardStarts=holds.map((hold,index)=>{
-  const at=start;
-  const clip=audio?.get(section.lines[index]);
-  start+=Math.max(base+hold,clip?clip.duration+.2:0);
-  return at;
- });
- section.duration=Math.max(duration,start);
-}
-function scriptCardAt(section,age){
- if(!section?.lines.length)return null;
- const index=section.cardStarts.findLastIndex(start=>start<=age);
- return section.lines[Math.max(0,index)];
-}
 let CAMERA_SCRIPT=null;
 function cameraScriptTick(now){
  const director=VOTE_PREVIEW||REC;
@@ -3365,9 +3205,9 @@ function cameraScriptTick(now){
 function cameraScriptTimeline(scenes,origin){
  const cues=[];let t=origin;
  for(const sc of scenes){
-  const {duration,cardStarts}=sc;
-  for(const c of sc.cues)if(c.target||c.zoom){
-   const at=t+(cardStarts[c.at]??Math.max(0,duration-.5));
+  const duration=sc.duration||scriptDuration(sc.lines,6),clean=cameraScriptExtract(sc.lines);
+  for(const c of clean.cues)if(c.target||c.zoom){
+   const at=t+Math.min(duration-1,c.at/Math.max(1,clean.lines.length)*duration);
    cues.push({time:at,target:c.target||{x:cam.x,y:cam.y,z:c.zoom}});
   }
   t+=duration;
@@ -3375,297 +3215,170 @@ function cameraScriptTimeline(scenes,origin){
  return cues.sort((a,b)=>a.time-b.time);
 }
 
-function studioScriptPlan(scenes,event,audio){
+for(const k of ['vote','event'])try{STUDIO_SCRIPTS[k]=localStorage.getItem('pixelandia-script-'+k)||''}catch(e){}
+function studioScriptParse(raw,mode){
+ const scenes=[];let current=null;
+ const allowed=mode==='vote'?['CENA: VILA','VOTACAO','CENA: FINAL']:['CENA: VILA','EVENTO','CENA: FINAL'];
+ for(const line of raw.split('\n')){
+  const t=line.trim();
+  if(/^\[[^\]]+\]$/.test(t)){
+   const cmd=t.slice(1,-1).toUpperCase();
+   if(/^(CAMERA|ZOOM|ESPERAR):/i.test(cmd)){if(!current)throw Error('Defina uma cena antes da câmera.');current.lines.push(t);continue}
+   if(!allowed.includes(cmd))throw Error('Comando não permitido: '+t);
+   current={cmd,lines:[]};scenes.push(current);
+  }else if(t){if(!current)throw Error('Comece com [CENA: VILA].');current.lines.push(t)}
+ }
+ if(!scenes.length||scenes[0].cmd!=='CENA: VILA')throw Error('Comece com [CENA: VILA].');
+ const key=mode==='vote'?'VOTACAO':'EVENTO';
+ if(scenes.filter(x=>x.cmd===key).length!==1)throw Error('Use ['+key+'] exatamente uma vez.');
+ if(scenes.some((x,i)=>x.cmd==='CENA: FINAL'&&scenes.slice(i+1).some(y=>y.cmd===key)))throw Error('A cena final deve vir depois de ['+key+'].');
+ return scenes;
+}
+function studioScriptRead(mode){
+ if(!['vote','event'].includes(mode)||!$('stScriptMode')?.checked)return null;
+ const raw=$('stScriptText').value;STUDIO_SCRIPTS[mode]=raw;
+ try{localStorage.setItem('pixelandia-script-'+mode,raw)}catch(e){}
+ try{return studioScriptParse(raw,mode)}catch(e){alert(e.message);return false}
+}
+function mountSceneBuilder(mode){
+ const area=$('stScriptArea'),editor=$('stScriptText');
+ const advanced=document.createElement('details');
+ advanced.innerHTML='<summary>Avançado · editar comandos</summary>';
+ advanced.append(...area.childNodes);
+ const sections=mode==='welcome'
+  ?['CENA: VILA',...WELCOME_QUEUE.map(n=>'MORADOR: '+n.name),'CENA: FINAL']
+  :['CENA: VILA',mode==='vote'?'VOTACAO':'EVENTO','CENA: FINAL'];
+ const locations=[['VILA','Praça'],['LAGO','Lago'],...buildings.filter(b=>b.done).map(b=>['CONSTRUCAO '+b.id,bName(b)+' · nº '+b.id])];
+ const options=items=>items.map(([value,label])=>`<option value="${esc(value)}">${esc(label)}</option>`).join('');
+ area.innerHTML=`<label for="stSceneSection">Cena</label><select class="in" id="stSceneSection">${options(sections.map(s=>[s,s.replace(/^CENA: /,'').replace(/^MORADOR: /,'')]))}</select>
+ <label for="stSceneLocation">Local da câmera</label><select class="in" id="stSceneLocation"><option value="">Câmera atual</option>${options(locations)}</select>
+ <label for="stSceneResident">Seguir morador</label><select class="in" id="stSceneResident"><option value="">Nenhum</option>${options(npcs.filter(n=>!/[\[\]\r\n]/.test(n.name)).map(n=>[n.name,n.name]))}</select>
+ <label for="stSceneHold">Tempo extra de leitura</label><select class="in" id="stSceneHold"><option value="">Automático</option><option value="2">+2 segundos</option><option value="4">+4 segundos</option><option value="6">+6 segundos</option></select>
+ <label for="stSceneText">Texto do card</label><input class="in" id="stSceneText" maxlength="180">
+ <button type="button" class="btn" id="stSceneAdd">Adicionar ao roteiro</button><p class="tip" id="stSceneStatus" aria-live="polite"></p>`;
+ area.append(advanced);
+ const location=$('stSceneLocation'),resident=$('stSceneResident'),text=$('stSceneText'),status=$('stSceneStatus');
+ location.onchange=()=>{if(location.value)resident.value=''};
+ resident.onchange=()=>{if(resident.value)location.value=''};
+ $('stSceneAdd').onclick=()=>{
+  const message=text.value.trim();
+  if(!message||/^\[.*\]$/.test(message)){status.textContent='Digite o texto do card.';return}
+  if(!editor.value.trim())$('stScriptExample').click();
+  if(!editor.value.trim())return;
+  const marker='['+$('stSceneSection').value+']';
+  const lines=editor.value.trimEnd().split('\n');
+  const at=lines.findIndex(line=>line.trim().toUpperCase()===marker.toUpperCase());
+  let end=at+1;
+  while(end<lines.length&&!/^\[(?:CENA:|MORADOR:|CONVITE\]|EVENTO\]|VOTACAO\])/i.test(lines[end].trim()))end++;
+  if(at<0){
+   // A cena final é opcional nos roteiros antigos de votação e evento.
+   if(marker!=='[CENA: FINAL]'||mode==='welcome'){status.textContent='Inclua essa cena no roteiro avançado ou gere um modelo atualizado.';return}
+   end=lines.length;lines.push('',marker);end=lines.length;
+  }
+  const camera=resident.value?'SEGUIR '+resident.value:location.value;
+  const hold=$('stSceneHold').value;
+  lines.splice(end,0,...(camera?['[CAMERA: '+camera+']']:[]),...(hold?['[ESPERAR: '+hold+']']:[]),message,'');
+  editor.value=lines.join('\n');
+  editor.oninput();text.value='';status.textContent='Card adicionado ao roteiro.';
+ };
+}
+function studioScriptAttach(scenes,mode){
+ if(!REC||!scenes)return;
  const sections=scenes.map(x=>{const c=cameraScriptExtract(x.lines);return {cmd:x.cmd,lines:c.lines,cues:c.cues,duration:Math.max(5,Math.ceil(c.lines.join(' ').length/12)+2)+c.extra}});
- const main=sections.find(x=>x.cmd==='EVENTO');
- const mainMin={rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[event]||60;
+ const key=mode==='vote'?'VOTACAO':'EVENTO';
+ const main=sections.find(x=>x.cmd===key);
+ const mainMin=mode==='vote'?STUDIO.voteSeconds:({rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[STUDIO.event]||60);
  main.duration=Math.max(main.duration,mainMin);
- let t=0;for(const section of sections){section.start=t;setScriptCardTiming(section,section.duration,audio);t+=section.duration}
- return {sections,duration:t,mainStart:main.start,cameraTimeline:cameraScriptTimeline(sections,0),voice:studioVoiceCues(sections,audio)};
+ let t=0;for(const section of sections){section.start=t;t+=section.duration}
+ REC.cameraTimeline=cameraScriptTimeline(scenes.map((scene,i)=>({...scene,duration:sections[i].duration})),0);
+ REC.customStudio={mode,sections,duration:t,mainStart:main.start,mainDuration:main.duration};
+ if(mode==='vote'){REC.vote.seconds=t;REC.vote.start=main.start;REC.vote.visualSeconds=main.duration}
+ if(mode==='event'){REC.ev.t0=REC.start+main.start*1000;REC.ev.scripted=true}
 }
-function studioScriptAttach(plan){
- REC.cameraTimeline=plan.cameraTimeline;
- REC.customStudio=plan;
- REC.ev.t0=REC.start+plan.mainStart*1000;REC.ev.scripted=true;
+function scriptParse(raw){
+ const scenes=[];let scene=null;
+ for(const line of raw.split('\n')){
+  const t=line.trim(),m=t.match(/^\[(CENA: VILA|CENA: FINAL|CONVITE|MORADOR: [^\]]+)\]$/i);
+  if(m){const cmd=m[1];scene={type:/^MORADOR:/i.test(cmd)?'resident':/^CONVITE/i.test(cmd)?'invite':/FINAL/i.test(cmd)?'final':'village',name:/^MORADOR:/i.test(cmd)?cmd.slice(8).trim():'',lines:[]};scenes.push(scene)}
+  else if(t&&scene)scene.lines.push(t);
+  else if(t)throw Error('Comece com [CENA: VILA].');
+ }
+ const names=scenes.filter(x=>x.type==='resident').map(x=>x.name.toLowerCase());
+ if(!scenes.length||scenes[0].type!=='village')throw Error('Comece com [CENA: VILA].');
+ if(names.length!==WELCOME_QUEUE.length||new Set(names).size!==names.length)throw Error('Inclua cada morador cadastrado uma única vez.');
+ if(names.some(n=>!WELCOME_QUEUE.some(d=>d.name.toLowerCase()===n)))throw Error('Confira os nomes dos moradores no roteiro.');
+ for(const sc of scenes)cameraScriptExtract(sc.lines);
+ if(scenes.at(-1)?.type!=='invite'||scenes.filter(x=>x.type==='invite').length!==1)throw Error('[CONVITE] deve aparecer somente no final.');
+ if(scenes.some((x,i)=>x.type==='final'&&scenes.slice(i+1).some(y=>y.type==='resident')))throw Error('[CENA: FINAL] deve vir depois dos moradores.');
+ return scenes;
 }
+function scriptDuration(lines,min){return Math.max(min,lines.join(' ').length/13+2)}
+function scriptSave(){if(!$('stScriptText'))return;WELCOME_SCRIPT=$('stScriptText').value;try{localStorage.setItem(SCRIPT_KEY,WELCOME_SCRIPT)}catch(e){}}
+function scriptSample(){return '[CENA: VILA]\nHoje a nossa vila está mais alegre!\n\n'+WELCOME_QUEUE.map((d,i)=>'[MORADOR: '+d.name+']\n'+(i?'Mas não é só isso! Também chegou ':'O primeiro a chegar é ')+d.name+'!\n').join('\n')+'\n[CENA: FINAL]\nQue dia especial para a nossa vila!\n\n[CONVITE]'}
+
+let ARRIVAL_PREVIEW=null;
+const SHORTS_DRAFT={name:'Heitor',prof:'lenhador',custom:'',sex:'m',handle:'',pet:''};
+
 const VOTE_BUILDINGS=Object.entries(BT).filter(([,building])=>!building.vip);
 const VOTE_BUILDING_KEYS=new Set(VOTE_BUILDINGS.map(([key])=>key));
 const VOTE_BALLOT_SECONDS=8;
-const VOTE_BALLOT_FADE=.35;
 let VOTE_PREVIEW=null;
-const VOTE_NARRATION={enabled:false,url:'',token:'',audio:new Map()};
-const EVENT_NARRATION={enabled:false,audio:new Map()};
-const OTHER_NARRATION=new Map();
-function studioNarration(mode){
- if(mode==='vote')return VOTE_NARRATION;
- if(mode==='event')return EVENT_NARRATION;
- if(!OTHER_NARRATION.has(mode))OTHER_NARRATION.set(mode,{enabled:false,audio:new Map()});
- return OTHER_NARRATION.get(mode);
-}
-const STUDIO_INVITE_LINE='Quer morar aqui? Comente seu nome e sua profissão!';
-function welcomeVoiceScript(replay,ballot){
- const residents=replay?replay.ids.map(id=>npcs.find(n=>n.id===id)).filter(Boolean):WELCOME_QUEUE;
- if(!residents.length)return null;
- const style=replay?.style||WELCOME_STYLE;
- const group=style==='group'||style==='express'||(style==='auto'&&residents.length>=5);
- const opening=group?[residents.length===1?'Tem gente nova chegando!':`Olha a estrada! Hoje chegam ${fmt(residents.length)} novos moradores.`]:
-  welcomeOpeningStory(npcs.length-(replay?residents.length:0),residents.length,buildings.filter(b=>b.done&&isHouse(b.type)).length);
- const entries=style==='express'?Array.from({length:Math.ceil(residents.length/WELCOME_BATCH_SIZE)},(_,i)=>
-  [residents.slice(i*WELCOME_BATCH_SIZE,(i+1)*WELCOME_BATCH_SIZE).map(n=>n.name).join(', ')+'. Boas-vindas!']):
-  residents.map((n,i)=>group?[`${n.name}, ${profLabel(n)}. Boas-vindas!`]:welcomeResidentStory(n,i));
- const updates=welcomeUpdateShots(replay?replay.result:STUDIO.welcomeResult,residents,!replay)
-  .map(shot=>[shot.title+'. '+shot.sub.replaceAll(' · ','. ')]);
- return {opening,entries,updates,celebrate:group?['A partir de hoje, esta vila também é de vocês.']:[],
-  ballot:ballot?[voteBallotSpeech(ballot)]:[],closing:[STUDIO_INVITE_LINE]};
-}
-function studioVoiceScript(mode,highlight,ballot,replay){
- if(mode==='welcome')return welcomeVoiceScript(replay,ballot);
- if(mode==='recap')return {
-  opening:[highlight?`O destaque do dia ${highlight.d} foi este. ${highlight.t}`:`Vamos relembrar mais um dia em ${villageName}.`],
-  night:['A luz vai sumindo e a vila desacelera. Até amanhã, vizinhança!'],
-  morning:[`Bom dia, ${villageName}! Um novo capítulo começa agora. ${STUDIO_INVITE_LINE}`]
- };
- if(mode==='invitation')return {main:['Imagina um mundo esperando seu primeiro morador.','Por enquanto, ninguém mora aqui. Quem vai abrir caminho?','O lago está tão quieto que até os peixes estranharam.','Tem floresta de sobra para quem quiser começar a construir.',STUDIO_INVITE_LINE]};
- if(mode==='resident'&&!npcs.some(n=>String(n.id)===STUDIO.resident))return null;
- const result=mode==='episode'&&STUDIO.episodeVote&&STUDIO.camera==='auto'?constructionVoteOpening():null;
- return {main:[...(result?[result.title+' '+result.sub]:[]),...pxStoryText(mode),STUDIO_INVITE_LINE]};
-}
-function studioPreparedVoice(mode,script){
- const {audio,enabled}=studioNarration(mode);
- if(!enabled)return null;
- if(!script||!Object.values(script).flat(2).every(text=>audio.has(text))){
-  alert('Gere a narração deste roteiro ou desative a opção de voz para gravar.');
-  return false;
- }
- return {script,audio};
-}
-function voiceSection(voice,lines,duration){
- const section={lines,cues:[]};
- setScriptCardTiming(section,duration,voice.audio);
- return section;
-}
-function attachTourVoice(voice,lines){
- voice.tour=true;
- const steps=TOUR.steps;
- steps.forEach((step,i)=>{
-  const selected=lines.filter((_,j)=>Math.round(j*(steps.length-1)/Math.max(1,lines.length-1))===i);
-  if(!selected.length)return;
-  step.voice=voiceSection(voice,selected,step.dur);
-  step.dur=step.voice.duration;
- });
- REC.voice=voice;
- REC.tourDuration=steps.reduce((sum,step)=>sum+step.dur,0);
-}
-function drawVoiceSection(g,w,h,voice,section,age,at=.73){
- if(!section||age<0)return;
- const index=section.cardStarts.findLastIndex(start=>start<=age);
- if(index<0)return;
- const text=section.lines[index];
- if(!REC.stopping){
-  if(voice.section!==section||voice.index!==index){
-   voice.section=section;voice.index=index;
-   voice.cue={at:section.cardStarts[index],audio:voice.audio.get(text)};
-  }
-  playStudioClip(voice,voice.cue,age,RECDEST);
- }
- if(at!==null)drawWelcomeCard(g,w,h,text,'',at);
-}
-const EVENT_DELIVERY={
- fire:['anxious','excited','thoughtful'],
- rain:['anxious','playful','thoughtful'],
- snow:['peaceful','warmly','thoughtful'],
- party:['excited','playful','excited'],
- chickens:['surprised','playful','excited'],
- ufo:['whispers','anxious','curious'],
-};
-function studioVoiceCues(sections,audio){
- if(!audio)return null;
- return {cues:sections.flatMap(section=>section.lines.map((text,i)=>({
-  at:section.start+section.cardStarts[i],audio:audio.get(text)
- })))};
-}
-function eventNarrationScenes(event){
- return [{cmd:'EVENTO',lines:EVENT_STORIES[event]}];
-}
 
-function voteBallotSpeech(options){
- return 'Qual obra vamos construir? '+options.map((key,i)=>`Opção ${i+1}, ${BT[key].label}.`).join(' ')+' Agora é com vocês! Comentem 1, 2 ou 3.';
-}
-function voteNarrationTexts(vote){
- return [...new Set([...vote.sections.flatMap(section=>section.lines),voteBallotSpeech(vote.options)])];
-}
-function stopStudioVoice(voice){
- if(!voice?.source)return;
- const source=voice.source;
- voice.source=null;
- source.onended=null;
- try{source.stop()}catch{}
- source.disconnect();
- if(voice.duck)MASTER.gain.setTargetAtTime(1,AC.currentTime,.08);
-}
-function playStudioVoice(voice,age,destination){
- const cue=voice.cues.findLast(item=>age>=item.at);
- playStudioClip(voice,cue,age,destination);
-}
-function playStudioClip(voice,cue,age,destination){
- if(!cue||voice.current===cue||!destination||AC.state!=='running')return;
- stopStudioVoice(voice);
- voice.current=cue;
- const offset=age-cue.at;
- if(offset>=cue.audio.duration)return;
- const source=AC.createBufferSource();
- source.buffer=cue.audio;
- source.connect(destination);
- voice.source=source;
- voice.duck=destination===RECDEST;
- if(voice.duck)MASTER.gain.setTargetAtTime(.24,AC.currentTime,.03);
- source.onended=()=>{
-  if(voice.source===source){voice.source=null;if(voice.duck)MASTER.gain.setTargetAtTime(1,AC.currentTime,.08)}
-  source.disconnect();
- };
- source.start(0,offset);
-}
-function openStudioNarration(highlight,replay=null){
- const mode=STUDIO.mode,isEvent=mode==='event',event=STUDIO.event;
- const narration=studioNarration(mode);
- let texts,delivery;
- if(isEvent){
-  texts=EVENT_STORIES[event];
-  delivery=text=>EVENT_DELIVERY[event]?.[EVENT_STORIES[event].indexOf(text)]||(text.includes('?')?'curious':'warmly');
- }else if(mode==='vote'){
-  const vote=votePlan(false);
-  if(!vote)return;
-  texts=voteNarrationTexts(vote);
-  const ballot=voteBallotSpeech(vote.options);
-  delivery=text=>text===ballot?'excited':text.includes('?')?'curious':'warmly';
- }else{
-  const ballot=mode==='welcome'?(replay?replay.ballot:STUDIO.welcomeVote?voteReadOptions('stWelcomeVoteOption'):null):null;
-  if(mode==='welcome'&&!replay&&STUDIO.welcomeVote&&!ballot)return;
-  const script=studioVoiceScript(mode,highlight,ballot,replay);
-  if(!script){alert(mode==='welcome'?'Adicione moradores à lista do vídeo.':'Escolha um morador para narrar.');return}
-  texts=[...new Set(Object.values(script).flat(2))];
-  delivery=text=>text.includes('?')?'curious':text.includes('Boa')||text.includes('!')?'excited':mode==='recap'?'thoughtful':'warmly';
- }
- const cached=texts.every(text=>narration.audio.has(text));
- modal(`<h3><span>Narração com ElevenLabs</span><button class="btn sm" id="mX">Voltar</button></h3>
- <p class="tip">🔒 Sua chave fica apenas na memória deste aparelho enquanto o app estiver aberto. Não é salva no GitHub, localStorage ou no projeto. A chave será enviada somente à API da ElevenLabs para gerar o áudio.</p>
- <label for="voiceApiKey">Chave da API ElevenLabs</label><input class="in" id="voiceApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Cole sua API Key">
- <label for="voiceModel">Modelo de voz</label><select class="in" id="voiceModel"><option value="eleven_multilingual_v2">Multilingual v2 (português)</option><option value="eleven_v3">Eleven v3</option><option value="eleven_flash_v2_5">Flash v2.5 (rápido)</option><option value="custom">Outro modelo (informar ID, inclusive v4 se disponível)</option></select><input class="in" id="voiceCustomModel" placeholder="ID do modelo na ElevenLabs" style="display:none">
- <label for="voiceId">ID da voz</label><input class="in" id="voiceId" placeholder="Selecione uma voz ou cole o Voice ID" autocomplete="off">
- <div class="row"><button class="btn" id="voiceList">Buscar minhas vozes</button><select class="in" id="voiceChoices" aria-label="Vozes disponíveis"><option value="">Escolha uma voz…</option></select></div>
- <details><summary>Texto dos cards</summary><ol>${texts.map(text=>'<li>'+esc(text)+'</li>').join('')}</ol></details>
- <div class="row"><button class="btn" id="voiceGenerate">Gerar narração</button><button class="btn" id="voiceUse" ${cached?'':'disabled'}>Usar no vídeo</button></div>
- <p id="voiceStatus" class="tip" aria-live="polite">${cached?'Narração pronta.':''}</p>`);
- const apiKey=$('voiceApiKey'),model=$('voiceModel'),customModel=$('voiceCustomModel'),voiceId=$('voiceId'),choices=$('voiceChoices'),generate=$('voiceGenerate'),status=$('voiceStatus'),use=$('voiceUse');
- apiKey.value=VOTE_NARRATION.token||'';
- model.value=['eleven_multilingual_v2','eleven_v3','eleven_flash_v2_5'].includes(VOTE_NARRATION.model)?VOTE_NARRATION.model:'custom';
- customModel.value=model.value==='custom'?(VOTE_NARRATION.model||''):'';
- model.onchange=()=>{customModel.style.display=model.value==='custom'?'block':'none'};model.onchange();
- voiceId.value=VOTE_NARRATION.voiceId||'';
- let controller;
- $('mX').onclick=()=>{controller?.abort();openRecMenu(highlight)};
- choices.onchange=()=>{if(choices.value)voiceId.value=choices.value};
- $('voiceList').onclick=async()=>{
-  const key=apiKey.value.trim();if(!key){status.textContent='Informe sua chave da API.';return}
-  status.textContent='Buscando vozes…';
-  try{
-   const response=await fetch('https://api.elevenlabs.io/v1/voices',{headers:{'xi-api-key':key},cache:'no-store'});
-   if(!response.ok)throw Error('Não foi possível consultar as vozes (HTTP '+response.status+').');
-   const data=await response.json();choices.replaceChildren(new Option('Escolha uma voz…',''));
-   for(const voice of data.voices||[])choices.add(new Option(voice.name||voice.voice_id,voice.voice_id));
-   status.textContent=(data.voices||[]).length+' vozes disponíveis.';
-  }catch(e){status.textContent='Falha ao buscar vozes: '+e.message+' Verifique chave, permissões e acesso do navegador.'}
- };
- use.onclick=()=>{narration.enabled=true;STUDIO.captions=true;openRecMenu(highlight)};
- generate.onclick=async()=>{
-  const key=apiKey.value.trim(),id=voiceId.value.trim();
-  if(!key||!id){status.textContent='Informe a chave da API e selecione uma voz.';return}
-  const context=audioInit();if(!context){status.textContent='Este navegador não consegue preparar a faixa de áudio.';return}
-  const selectedModel=model.value==='custom'?customModel.value.trim():model.value;
-  if(!selectedModel){status.textContent='Informe o ID do modelo desejado.';return}
-  VOTE_NARRATION.token=key;VOTE_NARRATION.model=selectedModel;VOTE_NARRATION.voiceId=id;
-  controller=new AbortController();const {signal}=controller;
-  generate.disabled=true;use.disabled=true;const clips=new Map();
-  try{
-   for(const [i,text] of texts.entries()){
-    status.textContent=`Gerando card ${i+1} de ${texts.length}…`;
-    const response=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+encodeURIComponent(id),{
-     method:'POST',headers:{'Content-Type':'application/json','xi-api-key':key,'Accept':'audio/mpeg'},
-     body:JSON.stringify({text,model_id:selectedModel}),signal,cache:'no-store'
-    });
-    if(!response.ok){const error=await response.json().catch(()=>null);throw Error(error?.detail?.message||error?.message||'ElevenLabs retornou HTTP '+response.status)}
-    clips.set(text,await context.decodeAudioData(await response.arrayBuffer()));
-   }
-   if(signal.aborted)return;
-   narration.audio=clips;status.textContent='Narração pronta. Toque em Usar no vídeo.';use.disabled=false;
-  }catch(e){if(!signal.aborted){status.textContent='Não foi possível gerar: '+e.message+'. Se o navegador bloquear o acesso direto, será necessário um serviço intermediário.';use.disabled=!cached}}
-  finally{generate.disabled=false}
- };
-
-}
-
-function voteOptionsFields(prefix){
- return [0,1,2].map(i=>`<label for="${prefix}${i}">Opção ${i+1}</label><select class="in" id="${prefix}${i}">${VOTE_BUILDINGS.map(([key,b])=>`<option value="${key}">${b.icon} ${esc(b.label)}</option>`).join('')}</select>`).join('');
-}
-function voteReadOptions(prefix='stVote'){
- const options=[0,1,2].map(i=>$(prefix+i)?.value);
+function voteReadOptions(){
+ const options=[0,1,2].map(i=>$('stVote'+i)?.value);
  if(options.some(key=>!VOTE_BUILDING_KEYS.has(key))||new Set(options).size!==3){
   alert('Selecione três obras diferentes do catálogo.');return null;
  }
  return options;
 }
-function voteStory(options=STUDIO.voteOptions){
+function voteStory(){
  const count=npcs.length;
- const finished=buildings.filter(b=>b.done).length;
- const opening=count===0?'Ainda não tem ninguém morando por aqui. Que tal escolher a primeira obra da vila?':
-  count===1?'Já tem alguém fazendo história em Pixelândia. Que obra a gente faz agora?':
-  finished?`Olha como a vila cresceu! Já somos ${fmt(count)} moradores. Agora, o que vamos construir?`:
-  `Já somos ${fmt(count)} moradores. Tem bastante gente para dar palpite na próxima obra!`;
+ const opening=count===0?'Nossa vila está pronta para receber seus primeiros moradores.':
+  count===1?'Já temos nosso primeiro morador na Pixelândia!':`Já somos ${fmt(count)} moradores na Pixelândia!`;
  const missing=['lenhador','medico'].filter(prof=>!hasProf(prof));
- const workers=missing.length===2?'Ainda falta gente para buscar madeira e cuidar da saúde. Lenhadores e médicos, a vila está esperando vocês!':
-  missing[0]==='lenhador'?'Os pedreiros vão precisar de madeira. Será que tem um lenhador assistindo?':
-  missing[0]==='medico'?'A vila está crescendo e ainda precisa de médicos. Quem vem cuidar da turma?':
-  'Já tem gente buscando madeira e cuidando da saúde. Agora queremos ouvir quem acompanha a vila!';
- const first=BT[options[0]],last=BT[options.at(-1)];
- const transition=first&&last?`Na lista tem ${first.label} e ${last.label}. Mas só uma das três vai ganhar. Bora votar?`:'Separei três ideias. Qual delas tem mais a cara da vila?';
+ const workers=missing.length===2?'Ainda precisamos de lenhadores para trazer madeira e de médicos para cuidar da vila.':
+  missing[0]==='lenhador'?'Ainda precisamos de lenhadores para trazer madeira para as próximas obras.':
+  missing[0]==='medico'?'Ainda precisamos de médicos para cuidar da nossa comunidade.':
+  'Já temos gente trazendo madeira e cuidando da saúde. Ainda cabe mais gente nessa história!';
+ const transition=missing.length?'Enquanto essa turma chega, vamos escolher juntos a próxima obra da vila.':
+  'Agora vamos escolher juntos o que construir para o próximo capítulo.';
  return [opening,workers,transition];
 }
-function votePlan(withVoice=VOTE_NARRATION.enabled){
+function votePlan(){
  const options=voteReadOptions();
  if(!options)return null;
+ const scenes=studioScriptRead('vote');
+ if(scenes===false)return null;
  const introSeconds=STUDIO.voteSeconds-VOTE_BALLOT_SECONDS;
  let end=0;
  try{
-  const cleanScenes=[cameraScriptExtract(voteStory(options))];
-  const audio=withVoice?VOTE_NARRATION.audio:null;
-  if(audio&&!voteNarrationTexts({sections:cleanScenes,options}).every(text=>audio.has(text))){
-   alert('O roteiro ou as opções mudaram. Gere a narração novamente ou desative a voz.');return null;
-  }
-  const sections=cleanScenes.map(clean=>{
-   const duration=introSeconds;
-   const section={...clean,start:end};
-   setScriptCardTiming(section,duration,audio);
-   end+=section.duration;
+  const sections=(scenes||[{lines:voteStory()}]).map(scene=>{
+   const clean=cameraScriptExtract(scene.lines);
+   const duration=scenes?Math.max(clean.lines.length?4:0,clean.lines.reduce((sum,line)=>sum+Math.max(2.5,line.length/18),0))+clean.extra:introSeconds;
+   const section={...clean,start:end,duration};
+   end+=duration;
    return section;
   });
-  const cameraTimeline=cameraScriptTimeline(sections,0);
+  const cameraTimeline=sections.flatMap(section=>section.cues.filter(cue=>cue.target||cue.zoom).map(cue=>({
+   time:section.start+Math.min(Math.max(0,section.duration-.5),cue.at/Math.max(1,section.lines.length)*section.duration),
+   target:cue.target||{x:cam.x,y:cam.y,z:cue.zoom}
+  }))).sort((a,b)=>a.time-b.time);
   STUDIO.voteOptions=options;
   const ballotAt=Math.max(introSeconds,end);
-  const ballotAudio=audio?.get(voteBallotSpeech(options));
-  const voice=studioVoiceCues(sections,audio);
-  if(voice)voice.cues.push({at:ballotAt,audio:ballotAudio});
-  return {options,sections,ballotAt,seconds:ballotAt+Math.max(VOTE_BALLOT_SECONDS,ballotAudio?ballotAudio.duration+.2:0),cameraTimeline,voice};
+  return {options,sections,ballotAt,seconds:ballotAt+VOTE_BALLOT_SECONDS,cameraTimeline};
  }catch(e){alert(e.message);return null}
 }
 function drawVoteOverlay(g,w,h,age,vote){
  if(age<vote.ballotAt){
   const section=vote.sections.find(scene=>scene.lines.length&&age>=scene.start&&age<scene.start+scene.duration)||
    vote.sections.findLast(scene=>scene.lines.length);
-  const msg=section&&scriptCardAt(section,age-section.start);
-  if(msg)drawWelcomeCard(g,w,h,msg,'',.72);
+  if(section?.lines.length){
+   const index=clamp(Math.floor((age-section.start)/section.duration*section.lines.length),0,section.lines.length-1);
+   drawWelcomeCard(g,w,h,section.lines[index],'',.72);
+  }
   return;
  }
- const alpha=clamp((age-vote.ballotAt)/VOTE_BALLOT_FADE,0,1);
+ const alpha=clamp((age-vote.ballotAt)/.35,0,1);
  const scale=Math.min(w/720,h/960);
  g.save();g.globalAlpha=alpha;
  drawWelcomeCard(g,w,h,'Qual obra vamos construir?','',.16,'light',scale);
@@ -3680,14 +3393,13 @@ function startVoteRecording(vote){
  ARRIVALS.active=false;
  closeModal();
  const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
- startRec(false,STUDIO.format,!!vote.voice);
+ startRec(false);
  if(REC){
   REC.vote=vote;REC.cameraTimeline=vote.cameraTimeline;
   TOUR=null;follow=null;pinnedFollow=false;
  }else{soundRec=oldSound;delete STUDIO.restoreSound}
 }
 function votePreview(vote){
- if(vote.voice)audioInit();
  const previous={cam:{...cam},follow,pinnedFollow,followUntil,TOUR};
  follow=null;pinnedFollow=false;TOUR=null;
  closeModal();
@@ -3702,8 +3414,6 @@ function votePreview(vote){
  let raf=0;
  function stop(){
   cancelAnimationFrame(raf);VOTE_PREVIEW=null;layer.remove();
-  stopStudioVoice(vote.voice);
-  if(vote.voice)vote.voice.current=null;
   Object.assign(cam,previous.cam);
   ({follow,pinnedFollow,followUntil,TOUR}=previous);
  }
@@ -3714,7 +3424,6 @@ function votePreview(vote){
   const ww=Math.min(sw,sh*ratio),hh=ww/ratio;
   g.drawImage(cv,(sw-ww)/2,(sh-hh)/2,ww,hh,0,0,target.width,target.height);
   drawVoteOverlay(g,target.width,target.height,age,vote);
-  if(vote.voice)playStudioVoice(vote.voice,age,AC?.destination);
   if(age<vote.seconds)raf=requestAnimationFrame(tick);else{stop();openRecMenu()}
  }
  raf=requestAnimationFrame(tick);
@@ -3727,23 +3436,14 @@ function dayRecapHighlights(){
 }
 function startDayRecap(highlight){
  if(REC||FF){alert('Aguarde a gravação ou a passagem da noite terminar.');return}
- const voice=studioPreparedVoice('recap',studioVoiceScript('recap',highlight));
- if(voice===false)return;
  ARRIVALS.active=false;
  closeModal();
  const oldSound=soundRec;
  soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
- startRec(false,STUDIO.format,!!voice);
+ startRec(false);
  if(!REC){soundRec=oldSound;delete STUDIO.restoreSound;return}
  const plaza={x:CX*T+8,y:CY*T+8,z:isMobile()?2.3:2.8};
  REC.dayRecap={highlight,plaza,closingDay:day()};
- if(voice){
-  STUDIO.captions=true;
-  REC.voice=voice;
-  voice.opening=voiceSection(voice,voice.script.opening,7.5);
-  voice.night=voiceSection(voice,voice.script.night,0);
-  voice.morning=voiceSection(voice,voice.script.morning,6.5);
- }
  TOUR=null;follow=null;pinnedFollow=false;
  Object.assign(cam,highlight?{x:highlight.x,y:highlight.y,z:plaza.z}:plaza);
  clampCam();
@@ -3751,16 +3451,15 @@ function startDayRecap(highlight){
 function dayRecapTick(now){
  const recap=REC?.dayRecap;
  if(!recap||REC.stopping)return;
- if(!recap.nightStarted&&(now-REC.start)>=(REC.voice?.opening.duration||7.5)*1000){
+ if(!recap.nightStarted&&(now-REC.start)>=7500){
   recap.nightStarted=true;
-  recap.nightAt=now;
   Object.assign(cam,recap.plaza);
   clampCam();
   endDay({dawn:420,realTime:true});
  }
- if(recap.nightStarted&&!FF&&day()>recap.closingDay&&now-recap.nightAt>=(REC.voice?.night.duration||0)*1000){
+ if(recap.nightStarted&&!FF&&day()>recap.closingDay){
   recap.morningAt??=now;
-  if(now-recap.morningAt>=(REC.voice?.morning.duration||6.5)*1000)stopRec();
+  if(now-recap.morningAt>=6500)stopRec();
  }
 }
 function drawDayRecap(g,w,h,recap,now){
@@ -3783,8 +3482,7 @@ function drawDayRecap(g,w,h,recap,now){
  }
 }
 const STUDIO={voteOptions:['casa','celeiro','mercado'],voteSeconds:20,mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party',episodeVote:true,welcomeResult:''};
-STUDIO.welcomeVote=false;
-STUDIO.welcomeVoteOptions=[...STUDIO.voteOptions];
+const USE_STUDIO_SCRIPT={vote:false,event:false};
 try{
  const draft=JSON.parse(localStorage.getItem(WELCOME_DRAFT_KEY)||'null');
  if(draft){
@@ -3793,6 +3491,7 @@ try{
   if(['auto','individual','group','express'].includes(draft.style))WELCOME_STYLE=draft.style;
   if([12,18,20,25,40].includes(draft.seconds))ARRIVALS.seconds=draft.seconds;
   if(['vertical','horizontal'].includes(draft.format))STUDIO.format=draft.format;
+  WELCOME_USE_SCRIPT=!!draft.useScript;
  }
 }catch(e){}
 function focusStudioResident(resident){
@@ -3831,41 +3530,33 @@ function studioResidentPreview(){
  $('mX').onclick=stop;raf=requestAnimationFrame(tick);
 }
 function studioEventOutline(){
- const lines=EVENT_STORIES[STUDIO.event];
- const rows=lines.map((line,i)=>`<li>${esc(line)}${EVENT_NARRATION.audio.has(line)?` <button class="btn xs" data-event-audio="${i}">Ouvir</button>`:''}</li>`);
+ const scenes=studioScriptRead('event');
+ if(scenes===false)return;
+ let rows;
+ try{
+  rows=scenes?scenes.map(scene=>{
+   const {lines}=cameraScriptExtract(scene.lines);
+   return `<li><b>${esc(scene.cmd)}</b>${lines.length?' · '+esc(lines.join(' ')):''}</li>`;
+  }):pxStoryText().map(line=>'<li>'+esc(line)+'</li>');
+ }catch(e){alert(e.message);return}
  const title=EVENTS.find(([key])=>key===STUDIO.event)?.[2]||'Evento especial';
  modal(`<h3><span>${esc(title)}</span><button class="btn sm" id="mX">Voltar</button></h3>
  <p class="tip">O evento será iniciado na vila ao gravar.</p><ol>${rows.join('')}</ol>`);
- let source;
- $('mX').onclick=()=>{if(source)source.stop();openRecMenu()};
- $('modalBox').querySelectorAll('[data-event-audio]').forEach(button=>button.onclick=async()=>{
-  const context=audioInit();
-  if(!context)return;
-  try{await context.resume()}catch(e){return}
-  if(!button.isConnected)return;
-  if(source)source.stop();
-  const clip=context.createBufferSource();
-  source=clip;
-  clip.buffer=EVENT_NARRATION.audio.get(lines[Number(button.dataset.eventAudio)]);
-  clip.connect(context.destination);
-  clip.onended=()=>{clip.disconnect();if(source===clip)source=null};
-  clip.start();
- });
+ $('mX').onclick=openRecMenu;
 }
-function openRecMenu(selectedHighlight){
+function openRecMenu(){
  const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['recap','🌙','Resumo do dia','Um destaque, a noite na vila e o amanhecer'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
- modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o tipo de vídeo. O Estúdio monta o roteiro com os dados atuais da vila.</p>
+ modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o conteúdo, ajuste a gravação e comece seu vídeo.</p>
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
  <div class="bgrp">2. Configuração</div><div class="studio-fields"><div id="stFormatField"><label for="stFormat">Formato do vídeo</label><select class="in" id="stFormat"><option value="horizontal">▭ Horizontal 16:9 — YouTube</option><option value="vertical">▯ Vertical 9:16 — Shorts / Reels</option></select></div>
  <div id="stCameraField"><label for="stCamera">Câmera</label><select class="in" id="stCamera"><option value="auto">🎬 Diretor automático</option><option value="manual">🕹️ Manual</option><option value="fixed">📌 Fixa</option></select></div>
- <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 📖 História em textos e legendas</label><label><input type="checkbox" id="stMusic"> 🎵 Música e efeitos no vídeo</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
+ <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 📖 História narrada em textos e legendas</label><label><input type="checkbox" id="stMusic"> 🎵 Música e efeitos no vídeo (sem voz)</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
  <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia</button></div>
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
  $('mX').onclick=closeModal;
  const recapHighlights=dayRecapHighlights();
- let recapHighlight=selectedHighlight===undefined||selectedHighlight instanceof Event?recapHighlights[0]||null:
-  recapHighlights.find(item=>item.d===selectedHighlight?.d&&item.t===selectedHighlight?.t&&item.x===selectedHighlight?.x&&item.y===selectedHighlight?.y)||null;
+ let recapHighlight=recapHighlights[0]||null;
  const f=$('stFormat'),camSel=$('stCamera');f.value=STUDIO.format;camSel.value=STUDIO.camera;
  for(const [key,id] of [['captions','stCaptions'],['music','stMusic'],['hud','stHud']]){$(id).checked=STUDIO[key];$(id).onchange=e=>{STUDIO[key]=e.target.checked;update()}}
  f.onchange=()=>{STUDIO.format=f.value;if(STUDIO.mode==='welcome')saveWelcomeDraft();update()};camSel.onchange=()=>{STUDIO.camera=camSel.value;update()};
@@ -3922,21 +3613,19 @@ function openRecMenu(selectedHighlight){
     ${recordedVotes?'<optgroup label="Resultados registrados">'+recordedVotes+'</optgroup>':''}
     ${readyWorks?'<optgroup label="Obras prontas">'+readyWorks+'</optgroup>':''}
    </select>
-   <label><input type="checkbox" id="stWelcomeVote" ${STUDIO.welcomeVote?'checked':''}> Abrir votação para a próxima obra no final</label>
-   <div id="stWelcomeBallot" ${STUDIO.welcomeVote?'':'hidden'}>${voteOptionsFields('stWelcomeVoteOption')}</div>
-   <p class="tip">Depois da chegada, o vídeo mostra o estado atual da vila.</p>
-`;
+   <p class="tip">Depois da chegada, o vídeo mostra o estado atual da vila e fecha com o convite para morar nela.</p>
+ <div id="stWelcomeScript"><div class="bgrp">📝 Roteiro do episódio</div><label><input type="checkbox" id="stScriptMode"> Roteiro personalizado</label>
+ <div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], [MORADOR: Nome], [CENA: FINAL], [CONVITE]. Para mudar a câmera dentro de uma cena, use [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3] ou [CAMERA: SEGUIR Nome]. Também: [ZOOM: 2] e [ESPERAR: 3].</p>
+ <textarea class="in" id="stScriptText" rows="12" style="width:100%;box-sizing:border-box"></textarea>
+ <button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button></div></div>`;
  }
  if(STUDIO.mode==='vote'){extra=`<div class="bgrp">🗳️ Votação da próxima construção</div><p class="tip">Selecione três obras do catálogo. O vídeo conta a história da vila antes de mostrar os três cards de votação.</p>${[0,1,2].map(i=>`<label for="stVote${i}">Opção ${i+1}</label><select class="in" id="stVote${i}">${VOTE_BUILDINGS.map(([key,b])=>`<option value="${key}">${b.icon} ${esc(b.label)}</option>`).join('')}</select>`).join('')}<label>Duração do Short</label><select class="in" id="stVoteSeconds"><option value="20">20 segundos</option><option value="30">30 segundos</option></select><p class="tip">O vídeo não contabiliza votos automaticamente. Confira os comentários do YouTube e construa a mais votada no jogo.</p>`;}
  if(STUDIO.mode==='resident'){extra='<label for="stResidentSearch">Buscar morador</label><input class="in" type="search" id="stResidentSearch" placeholder="Digite parte do nome"><label for="stResident">Morador em destaque</label><select class="in" id="stResident"></select>'}
- const narration=studioNarration(STUDIO.mode);
- extra+=`<div class="row"><button type="button" class="btn" id="stNarration">Narração com ElevenLabs</button>
-  <label><input type="checkbox" id="stVoiceEnabled" ${narration.enabled?'checked':''}> Incluir voz no vídeo</label></div>`;
- $('stExtra').innerHTML=extra;
- if($('stNarration')){
-  $('stNarration').onclick=()=>openStudioNarration(recapHighlight);
-  $('stVoiceEnabled').onchange=e=>{narration.enabled=e.target.checked};
+ if(STUDIO.mode==='vote'||STUDIO.mode==='event'){
+  const mode=STUDIO.mode;
+  extra+='<div class="bgrp">📝 Roteiro personalizado</div><label><input type="checkbox" id="stScriptMode"> Usar meu roteiro</label><div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], ['+(mode==='vote'?'VOTACAO':'EVENTO')+'], [CENA: FINAL]. Use também [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3], [ZOOM: 2] e [ESPERAR: 3]. O texto é exibido em sequência, sem voz.</p><textarea class="in" id="stScriptText" rows="11" style="width:100%;box-sizing:border-box"></textarea><button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button></div>';
  }
+ $('stExtra').innerHTML=extra;
  if(episodeMode){
   $('stEpisodeVote').onchange=e=>{STUDIO.episodeVote=e.target.checked;$('stEpisodeResult').hidden=!STUDIO.episodeVote};
   const field=$('stEpisodeWork');
@@ -3951,18 +3640,27 @@ function openRecMenu(selectedHighlight){
   field.onchange=()=>{recapHighlight=recapHighlights[Number(field.value)]||null;opening()};
   opening();
  }
+ if(STUDIO.mode==='vote'||STUDIO.mode==='event'){
+  const mode=STUDIO.mode,ta=$('stScriptText');
+  ta.value=STUDIO_SCRIPTS[mode];
+  $('stScriptMode').checked=USE_STUDIO_SCRIPT[mode];
+  $('stScriptArea').style.display=USE_STUDIO_SCRIPT[mode]?'block':'none';
+  $('stScriptMode').onchange=e=>{
+   USE_STUDIO_SCRIPT[mode]=e.target.checked;
+   $('stScriptArea').style.display=e.target.checked?'block':'none';
+  };
+  const persist=()=>{STUDIO_SCRIPTS[mode]=ta.value;try{localStorage.setItem('pixelandia-script-'+mode,ta.value)}catch(e){}};
+  ta.oninput=persist;
+  $('stScriptExample').onclick=()=>{
+   if(ta.value.trim()&&!confirm('Substituir o roteiro atual?'))return;
+   ta.value=mode==='vote'?'[CENA: VILA]\n'+voteStory().join('\n')+'\n\n[VOTACAO]':'[CENA: VILA]\\nTudo parecia tranquilo em Pixelândia... mas uma surpresa estava chegando!\\n\\n[EVENTO]\\nAtenção, moradores! Algo especial está acontecendo!\\n\\n[CENA: FINAL]\\nQue aventura! O que vocês acharam?';
+   ta.value=ta.value.replace(/\\n/g,'\n');persist();
+  };
+  mountSceneBuilder(mode);
+ }
  if($('stNewProf')){ $('stNewName').value=SHORTS_DRAFT.name; $('stNewProf').value=SHORTS_DRAFT.prof; $('stNewSex').value=SHORTS_DRAFT.sex; $('stNewCustom').value=SHORTS_DRAFT.custom; $('stNewCustom').style.display=SHORTS_DRAFT.prof==='custom'?'block':'none'; $('stNewHandle').value=SHORTS_DRAFT.handle; $('stNewPet').value=SHORTS_DRAFT.pet; $('stNewProf').onchange=()=>{$('stNewCustom').style.display=$('stNewProf').value==='custom'?'block':'none'};$('stSeconds').value=String(ARRIVALS.seconds);$('stSeconds').onchange=()=>ARRIVALS.seconds=Number($('stSeconds').value);}
 
  if($('stQueueAdd')){
-  $('stWelcomeVote').onchange=e=>{
-   STUDIO.welcomeVote=e.target.checked;
-   $('stWelcomeBallot').hidden=!STUDIO.welcomeVote;
-   welcomeQueueRender();
-  };
-  for(const [i,key] of STUDIO.welcomeVoteOptions.entries()){
-   const field=$('stWelcomeVoteOption'+i);
-   field.value=key;field.onchange=()=>{STUDIO.welcomeVoteOptions[i]=field.value};
-  }
   const result=$('stWelcomeResult');
   result.value=STUDIO.welcomeResult;
   if(result.selectedIndex<0){result.value='';STUDIO.welcomeResult=''}
@@ -3972,16 +3670,20 @@ function openRecMenu(selectedHighlight){
   $('stSeconds').onchange=()=>{ARRIVALS.seconds=Number($('stSeconds').value);saveWelcomeDraft();welcomeQueueRender()};
   $('stQueueAdd').onclick=welcomeQueueAdd;welcomeQueueRender();
   $('stQueueBulk').onclick=welcomeBulkMenu;
+  $('stScriptMode').onchange=()=>{
+   WELCOME_USE_SCRIPT=$('stScriptMode').checked;
+   $('stScriptArea').style.display=WELCOME_USE_SCRIPT?'block':'none';
+   saveWelcomeDraft();
+  };
   if(LAST_WELCOME?.seed===seed){
    const replay=document.createElement('button');
    replay.type='button';replay.className='btn';replay.textContent='Regravar última chegada';
    replay.onclick=()=>welcomeStartBatch(LAST_WELCOME);
    $('stWelcomeCount').after(replay);
-   const replayVoice=document.createElement('button');
-   replayVoice.type='button';replayVoice.className='btn';replayVoice.textContent='Narração da última chegada';
-   replayVoice.onclick=()=>openStudioNarration(undefined,LAST_WELCOME);
-   replay.after(replayVoice);
   }
+  $('stScriptText').value=WELCOME_SCRIPT;$('stScriptText').oninput=scriptSave;
+  $('stScriptExample').onclick=()=>{if(!WELCOME_QUEUE.length){alert('Adicione os moradores primeiro.');return}if($('stScriptText').value.trim()&&!confirm('Substituir o texto atual?'))return;$('stScriptText').value=scriptSample();scriptSave()};
+  mountSceneBuilder('welcome');
  }
  if($('stVoteSeconds')){$('stVoteSeconds').value=String(STUDIO.voteSeconds);$('stVoteSeconds').onchange=()=>STUDIO.voteSeconds=Number($('stVoteSeconds').value);for(let i=0;i<3;i++){const field=$('stVote'+i);field.value=STUDIO.voteOptions[i];field.onchange=()=>STUDIO.voteOptions[i]=field.value;}}
  if($('stEvent')){$('stEvent').value=STUDIO.event;$('stEvent').onchange=e=>STUDIO.event=e.target.value}
@@ -4002,40 +3704,11 @@ function openRecMenu(selectedHighlight){
  $('stStart').onclick=()=>{if(STUDIO.mode==='recap'){startDayRecap(recapHighlight);return}if(STUDIO.mode==='vote'){const vote=votePlan();if(vote)startVoteRecording(vote);return;}if(STUDIO.mode==='invitation'){inviteRecord();return}
  const mode=STUDIO.mode,resident=mode==='resident'?npcs.find(n=>n.id===Number(STUDIO.resident)):null;
  if(mode==='resident'&&!resident){alert('Escolha um morador para gravar.');return}
- if(mode==='event'&&STUDIO.event==='fire'&&!buildings.some(b=>b.done&&!BT[b.type].open&&!(b.fire>0))){
-  alert('A vila precisa de um prédio pronto para gravar esse evento.');return;
- }
- if(mode==='event'&&STUDIO.event==='ufo'&&!npcs.some(n=>n.active&&!n.inside&&!n.sleeping)){
-  alert('Espere ter um morador acordado ao ar livre para gravar o OVNI.');return;
- }
- let eventPlan=null;
- if(mode==='event'){
-  const scenes=eventNarrationScenes(STUDIO.event);
-  const audio=EVENT_NARRATION.enabled?EVENT_NARRATION.audio:null;
-  try{
-   if(audio&&!scenes.every(scene=>cameraScriptExtract(scene.lines).lines.every(line=>audio.has(line)))){
-    alert('O evento ou o roteiro mudou. Gere a narração novamente ou desative a voz.');return;
-   }
-   eventPlan=studioScriptPlan(scenes,STUDIO.event,audio);
-   if(audio&&!eventPlan.voice.cues.length){alert('Inclua pelo menos um card com texto.');return}
-  }catch(e){alert(e.message);return}
- }
+ const eventScenes=mode==='event'?studioScriptRead('event'):null;if(eventScenes===false)return;
+ if(eventScenes){try{for(const scene of eventScenes)cameraScriptExtract(scene.lines)}catch(e){alert(e.message);return}}
  if(mode==='welcome'){welcomeStartBatch();return;}else ARRIVALS.active=false;
- const voice=mode==='event'?null:studioPreparedVoice(mode,studioVoiceScript(mode));
- if(voice===false)return;
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
- if(mode==='event'){
-  if(eventPlan?.voice)STUDIO.captions=true;
-  startRecEvent(STUDIO.event,eventPlan);
- }else{
-  startRec(mode==='episode'&&STUDIO.camera==='auto',STUDIO.format,!!voice);
-  if(REC&&resident)focusStudioResident(resident);
-  if(REC&&voice){
-   STUDIO.captions=true;
-   if(REC.auto&&TOUR)attachTourVoice(voice,voice.script.main);
-   else{REC.voice=voice;voice.main=voiceSection(voice,voice.script.main,mode==='resident'?30:24)}
-  }
- }
+ if(mode==='event'){startRecEvent(STUDIO.event,eventScenes)}else{startRec(mode==='episode'&&STUDIO.camera==='auto');if(REC&&resident)focusStudioResident(resident)}
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;}
  };
  $('stPreview').onclick=()=>{
@@ -4138,7 +3811,7 @@ const SFX={
 };
 const SFX_GAP={chop:0.22,pick:0.25,hammer:0.18,bird:2,cricket:1.2,cluck:0.5,boom:0.25,splash:0.8,crackle:0.3};
 const lastS={};
-function sfx(name){if(!canPlay()||(REC?.voice&&REC?.mr?.state==='recording'))return;const t=AC.currentTime,g=SFX_GAP[name]??0.1;if(lastS[name]!=null&&t-lastS[name]<g)return;lastS[name]=t;try{SFX[name](t+0.01)}catch(e){}}
+function sfx(name){if(!canPlay())return;const t=AC.currentTime,g=SFX_GAP[name]??0.1;if(lastS[name]!=null&&t-lastS[name]<g)return;lastS[name]=t;try{SFX[name](t+0.01)}catch(e){}}
 function sfxAt(name,wx,wy){if(onScreenXY(wx,wy,40))sfx(name)}
 let ambT=0,tuneT=0;
 function audioTick(dt){
@@ -4262,51 +3935,11 @@ $('bulkBtn').onclick=()=>{
 };
 $('resetBtn').onclick=()=>{modal(`<h3>🔄 Criar um novo mundo?</h3><p>Todos os moradores e construções serão apagados. Isso não pode ser desfeito.</p><div class="row"><button class="btn red" id="mYes">Sim, recomeçar</button><button class="btn" id="mNo">Cancelar</button></div>`);
   $('mYes').onclick=()=>{newWorld();save();refreshPanel(true);closeModal();logEv('🌲 Um novo mundo nasceu')};$('mNo').onclick=closeModal};
-$('backupBtn').onclick=()=>{
-  modal(`<h3>💾 Backup da vila</h3><p>Baixe uma cópia da sua vila. A importação substitui a vila atual.</p>
-    <div class="row"><button class="btn" id="bkDownload">⬇️ Baixar JSON</button><button class="btn" id="bkImport">📥 Importar arquivo</button><button class="btn" id="bkClose">Fechar</button></div>
-    <input id="bkFile" type="file" accept=".json,.txt,application/json,text/plain" hidden>
-    <details style="margin-top:8px"><summary>Tenho um código de backup antigo</summary><textarea id="bkLegacy" aria-label="Código de backup antigo"></textarea><button class="btn" id="bkImportLegacy">Restaurar código</button></details>
-    <p id="bkStatus" role="status"></p>`);
-  const fileInput=$('bkFile'),status=$('bkStatus');
-  function restoreBackup(text){
-    const source=text.trim();
-    const backup=JSON.parse(source.startsWith('{')?source:decodeURIComponent(escape(atob(source))));
-    const size=backup?.v===1?80*60:N;
-    if(![1,2].includes(backup?.v)||!Number.isFinite(backup.seed)||!Number.isFinite(backup.mins)||
-      !['ground','obj','objVar','crop'].every(key=>typeof backup[key]==='string'&&backup[key].length===size)){
-      throw new Error('Backup inválido');
-    }
-    if(!window.confirm('Substituir a vila atual pela vila do backup?'))return;
-    const previous=JSON.parse(serialize());
-    try{load(backup)}catch(error){load(previous);throw error}
-    centerCam();tlReset();save();refreshHud();refreshPanel(true);closeModal();logEv('📥 Vila restaurada!');
-  }
-  $('bkDownload').onclick=()=>{
-    const link=document.createElement('a');
-    const url=URL.createObjectURL(new Blob([serialize()],{type:'application/json'}));
-    link.href=url;
-    link.download='mundo-pixelandia-dia-'+day()+'.json';
-    document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),60000);
-  };
-  $('bkImport').onclick=()=>fileInput.click();
-  fileInput.onchange=async()=>{
-    const file=fileInput.files[0];
-    fileInput.value='';
-    if(!file)return;
-    status.textContent='';
-    try{
-      const content=await file.text();
-      if(fileInput.isConnected&&$('modal').style.display!=='none')restoreBackup(content);
-    }catch(error){status.textContent='❌ Não foi possível importar o arquivo. Confira se ele é um backup do Mundo Pixelândia.'}
-  };
-  $('bkImportLegacy').onclick=()=>{
-    status.textContent='';
-    try{restoreBackup($('bkLegacy').value)}catch(error){status.textContent='❌ Código de backup inválido.'}
-  };
-  $('bkClose').onclick=closeModal;
-};
+$('backupBtn').onclick=()=>{modal(`<h3>💾 Backup da vila</h3><p style="font-size:14px">A vila é salva automaticamente neste navegador. Para garantir, copie o código abaixo e guarde. Para restaurar, cole um código e clique em Importar.</p><textarea id="bk"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="bCopy">📋 Copiar</button><button class="btn" id="bImp">📥 Importar</button><button class="btn" id="bClose">Fechar</button></div><p id="bMsg" style="font-size:13px"></p>`);
+  $('bk').value=btoa(unescape(encodeURIComponent(serialize())));
+  $('bCopy').onclick=async()=>{try{await navigator.clipboard.writeText($('bk').value);$('bMsg').textContent='✅ Copiado!'}catch(e){$('bk').select();$('bMsg').textContent='Selecionei o texto: use Ctrl+C.'}};
+  $('bImp').onclick=()=>{try{load(JSON.parse(decodeURIComponent(escape(atob($('bk').value.trim())))));tlReset();save();refreshPanel(true);closeModal();logEv('📥 Vila restaurada!')}catch(e){$('bMsg').textContent='❌ Código inválido.'}};
+  $('bClose').onclick=closeModal};
 
 // ponteiro
 const ptrs=new Map();let moved=0,pinch=0;
@@ -4327,7 +3960,7 @@ const enc=a=>{let s='';for(let i=0;i<a.length;i+=4096)s+=String.fromCharCode.app
 const dec=(s,T2)=>{const a=new T2(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i)-48;return a};
 function serialize(){return JSON.stringify({v:2,seed,villageName,mins,res,lastLunch,goalIdx,hooks,ground:enc(ground),obj:enc(obj),objVar:enc(objVar),crop:enc(crop),
   buildings:buildings.map(b=>[b.id,b.type,b.x,b.y,b.done?1:0,Math.round(b.progress*10)/10,b.manual?1:0,b.owner??-1,b.rail?b.rail.map(v=>v.toString(36)).join('.'):0]),sea:1,season:SEASON,coast:COAST,dist:DIST,dayMode,epMin,daylog:DAYLOG,constructionVotes,queue,nextId,nextBid,spawn,
-  npcs:npcs.map(n=>[n.id,n.name,n.prof,n.sex,n.custom,n.home,n.si,n.hi,n.pi,n.ci,n.beard?1:0,n.fed?1:0,n.day||1,n.spouse??-1,n.kids&&n.kids.length?n.kids.map(k=>k.name+'|'+k.sex):0,n.st||0,(n.vip?1:0)|(n.fan?2:0)|(n.mayor?4:0),n.pet?n.pet.k+n.pet.c+(n.pet.name?'|'+n.pet.name:''):0,n.youtubeHandle||''])})}
+  npcs:npcs.map(n=>[n.id,n.name,n.prof,n.sex,n.custom,n.home,n.si,n.hi,n.pi,n.ci,n.beard?1:0,n.fed?1:0,n.day||1,n.spouse??-1,n.kids&&n.kids.length?n.kids.map(k=>k.name+'|'+k.sex):0,n.st||0,(n.vip?1:0)|(n.fan?2:0)|(n.mayor?4:0),n.pet?n.pet.k+n.pet.c+(n.pet.name?'|'+n.pet.name:''):0])})}
 function restoreNPCs(){for(const n of npcs){if(n.prof==='custom'&&/poli?ss?onograf/.test(norm(n.custom||''))){n.prof='polissonografista';n.custom=''}if(n.prof==='custom'&&typeof PROF_ALIAS!=='undefined'&&PROF_ALIAS[norm(n.custom||'')]){n.prof=PROF_ALIAS[norm(n.custom)];n.custom=''}npcColors(n);n.st=n.st||{};n.kids=n.kids||[];if(n.spouse==null)n.spouse=-1;n.day=n.day||1;n.abT=0;n.kid=null;n.petO=null;if(n.pet===undefined)n.pet=null;Object.assign(n,{dir:'down',plan:[],step:null,carry:null,carryN:0,carryRes:null,inside:false,sleeping:false,idle:0,walkT:0,animT:0,lifeT:0,anim:null,bubble:null,status:'Acordando',active:false,x:spawn.x*T+8,y:spawn.y*T+12})}}
 function load(s){
   if(!s||(s.v!==1&&s.v!==2))throw new Error('bad');
@@ -4338,7 +3971,7 @@ function load(s){
     if(ground.length!==N)throw new Error('size');
     buildings=(s.buildings||[]).map(a=>{const d=BT[a[1]];return{id:a[0],type:a[1],x:a[2],y:a[3],w:d.w,h:d.h,done:!!a[4],progress:a[5],need:d.time,manual:!!a[6],owner:a[7]>=0?a[7]:null,rail:a[8]?a[8].split('.').map(v=>parseInt(v,36)):null}});
     queue=(s.queue||[]).filter(q=>BT[q.type]);spawn=s.spawn||spawn;
-    npcs=(s.npcs||[]).map(a=>({id:a[0],name:a[1],prof:PROF[a[2]]||a[2]==='custom'?a[2]:'custom',sex:a[3],custom:a[4],home:a[5],si:a[6],hi:a[7],pi:a[8],ci:a[9],beard:!!a[10],fed:!!a[11],day:a[12]||1,spouse:a[13]??-1,kids:a[14]?a[14].map(t=>{const[nm,sx]=t.split('|');return{name:nm,sex:sx}}):[],st:a[15]||{},vip:!!(a[16]&1),fan:!!(a[16]&2),mayor:!!(a[16]&4),pet:a[17]?{k:a[17].slice(0,3),c:parseInt(a[17].slice(3))||0,name:(String(a[17]).split('|')[1]||'')}:null,youtubeHandle:typeof a[18]==='string'?a[18]:''}));
+    npcs=(s.npcs||[]).map(a=>({id:a[0],name:a[1],prof:PROF[a[2]]||a[2]==='custom'?a[2]:'custom',sex:a[3],custom:a[4],home:a[5],si:a[6],hi:a[7],pi:a[8],ci:a[9],beard:!!a[10],fed:!!a[11],day:a[12]||1,spouse:a[13]??-1,kids:a[14]?a[14].map(t=>{const[nm,sx]=t.split('|');return{name:nm,sex:sx}}):[],st:a[15]||{},vip:!!(a[16]&1),fan:!!(a[16]&2),mayor:!!(a[16]&4),pet:a[17]?{k:a[17].slice(0,3),c:parseInt(a[17].slice(3))||0,name:(String(a[17]).split('|')[1]||'')}:null}));
     nextId=s.nextId;nextBid=s.nextBid;
   }
   cropT=new Float32Array(N);bld=new Int16Array(N).fill(-1);bById.clear();
