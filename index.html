@@ -2231,7 +2231,7 @@ function buildTour(){
 }
 function startTour(){TOUR={steps:buildTour(),i:0,t:0,invite:!npcs.length};const s0=TOUR.steps[0];if(s0&&s0.x!=null){cam.x=s0.x;cam.y=s0.y;cam.z=s0.z}
   if(TOUR.invite)TOUR.demo={x:CX*T-10,y:CY*T+12,dir:'down',moving:false,walkT:0,skin:SKINS[1],hairC:HAIRS[2%HAIRS.length],pants:PANTS[0],shirt:PROF.pescador.shirt,sex:'f',prof:'pescador',shown:false};follow=null;pinnedFollow=false}
-function endTour(){if(TOUR&&TOUR.inviteShort){TOUR.hold=true;return}if(REC&&REC.auto&&TOUR){TOUR.i=TOUR.steps.length-1;TOUR.t=TOUR.steps[TOUR.i].dur;TOUR.hold=true;stopRec();return}TOUR=null}
+function endTour(){if(TOUR&&TOUR.inviteShort){TOUR.hold=true;return}if(REC&&REC.auto&&TOUR&&REC.studioMode==='episode'){TOUR.i=TOUR.steps.length-1;TOUR.t=TOUR.steps[TOUR.i].dur;TOUR.hold=true;return}if(REC&&REC.auto&&TOUR){TOUR.i=TOUR.steps.length-1;TOUR.t=TOUR.steps[TOUR.i].dur;TOUR.hold=true;stopRec();return}TOUR=null}
 function tourTick(dt){if(!TOUR||TOUR.hold)return;const st=TOUR.steps[TOUR.i];TOUR.t+=dt;let tx=st.x,ty=st.y;
   if(st.follow!=null){const n=npcs.find(m=>m.id===st.follow);if(n&&n.active){tx=n.x;ty=n.y-8}else if(n){const hb=homeB(n);if(hb){tx=(hb.x+hb.w/2)*T;ty=(hb.y+hb.h)*T}}}
   if(tx!=null){const k=Math.min(1,dt*2.4);cam.x+=(tx-cam.x)*k;cam.y+=(ty-cam.y)*k;cam.z+=(st.z-cam.z)*k}
@@ -2605,11 +2605,16 @@ function recFrame(now){
   }
   if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
   if(REC?.groupWelcome&&STUDIO.captions)drawWelcomeGroup(g,W2,H2,hAge);
- else if(REC)pxStoryOverlay(g,W2,H2,hAge);
+ else if(REC&&!REC.auto)pxStoryOverlay(g,W2,H2,hAge);
   // No encerramento, esconder a legenda narrativa e manter o convite por cima.
   if(REC&&REC.arrivalId&&STUDIO.captions&&ARRIVALS.index===ARRIVALS.ids.length-1){
     const finalAge=(now-REC.arrivalStart)/1000-REC.arrivalSeconds;
     if(finalAge>=(REC.customWelcome?REC.customWelcome.ending-4:0))drawShortsCTA(g,W2,H2,s,finalAge-(REC.customWelcome?REC.customWelcome.ending-4:0),4);
+  }
+  // Episódios automáticos: encerramento fixo, idêntico ao convite da prévia.
+  if(REC&&REC.auto&&REC.studioMode==='episode'){
+    if(hAge>=54&&STUDIO.captions)drawWelcomeCard(g,W2,H2,'🔔 Se inscreva','Para acompanhar a história do seu morador!',.72,'dark');
+    if(hAge>=60&&!REC.stopping)stopRec();
   }
   // marca d'água
   if(STUDIO.captions){g.textAlign='center';g.textBaseline='middle';g.font=`700 ${28*s}px "Pixelify Sans",sans-serif`;g.lineWidth=6*s;g.strokeStyle='rgba(30,18,8,.8)';
