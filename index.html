@@ -1745,7 +1745,7 @@ function frame(now){
   const dt=Math.min(0.1,(now-last)/1000);last=now;gtime+=dt;
   const steps=timeScale,sub=dt;
   audioTick(dt);
-  for(let k=0;k<steps;k++){updateEvents(sub);updateVehicles(sub);worldTick(sub);for(const n of npcs)if(n.active&&!(REC&&REC.arrivalId===n.id))updateNPC(n,sub)}
+  for(let k=0;k<steps;k++){updateEvents(sub);updateVehicles(sub);worldTick(sub);for(const n of npcs)if(n.active&&!(REC&&REC.arrivalId===n.id)&&!(ARRIVAL_PREVIEW&&ARRIVAL_PREVIEW.id===n.id))updateNPC(n,sub)}
   updateAmbient(dt);
   arrivalSceneTick(now,dt);
   tourTick(dt);
@@ -1753,7 +1753,7 @@ function frame(now){
   if(follow!=null&&followUntil&&now>followUntil&&!pinnedFollow){follow=null;followUntil=0}
   clampCam();render();recFrame(now);
   uiAcc+=dt;if(uiAcc>0.5){uiAcc=0;refreshHud();refreshPanel(false)}
-  saveAcc+=dt;if(saveAcc>20){saveAcc=0;save()}
+  saveAcc+=dt;if(saveAcc>20){saveAcc=0;if(!ARRIVAL_PREVIEW)save()}
   requestAnimationFrame(frame);
 }
 
@@ -2202,10 +2202,12 @@ function arrivalRoadRoute(fromX,fromY){
   return tiles.length?tiles:[{x:fromX,y:fromY}];
 }
 function arrivalSceneTick(now,dt){
-  if(!REC||!REC.arrivalScene)return;
-  const sc=REC.arrivalScene,n=npcs.find(m=>m.id===sc.id);if(!n)return;
-  const age=(now-REC.start)/1000;
-  const walk=clamp((age-0.8)/Math.max(3,REC.arrivalSeconds-4.8),0,1);
+  const director=REC&&REC.arrivalScene?REC:ARRIVAL_PREVIEW;
+  if(!director||!director.arrivalScene)return;
+  const sc=director.arrivalScene,n=npcs.find(m=>m.id===sc.id);if(!n)return;
+  const age=(now-director.start)/1000;
+  const walk=clamp((age-1.3)/Math.max(3,director.arrivalSeconds-5.8),0,1);
+  if(STUDIO.music&&REC&&director===REC&&sc.musicStep!==Math.floor(age/5)&&age<director.arrivalSeconds-2){sc.musicStep=Math.floor(age/5);sfx('tune')}
   const route=sc.route||[{x:sc.fromX,y:sc.fromY}];
   if(route.length>1){
     const pos=walk*sc.total;let i=0;
@@ -2223,14 +2225,14 @@ function arrivalSceneTick(now,dt){
   // Mantém o personagem centralizado, sem legendas sobre ele.
   cam.x+=(n.x-cam.x)*Math.min(1,dt*7);
   cam.y+=(n.y-15-cam.y)*Math.min(1,dt*7);
-  cam.z+=(4.4-cam.z)*Math.min(1,dt*4);
+  cam.z+=((isMobile()?3.7:4.2)-cam.z)*Math.min(1,dt*4);
 }
 // Cartão pequeno no canto: aparece brevemente, sai e libera toda a cena.
 function drawArrivalTag(g,W2,H2,s,n,age){
   const enter=clamp(age/.35,0,1),leave=clamp((5.1-age)/.55,0,1),alpha=Math.min(enter,leave);
   if(alpha<=0)return;
-  const pad=13*s,bw=Math.min(W2*.48,390*s),bh=78*s;
-  const x=22*s-(1-enter)*30*s,y=H2*.12;
+  const pad=13*s,bw=Math.min(W2*.66,360*s),bh=76*s;
+  const x=22*s-(1-enter)*30*s,y=H2*.135;
   g.save();g.globalAlpha=alpha;
   g.fillStyle='rgba(255,242,205,.94)';rr(g,x,y,bw,bh,10*s);g.fill();
   g.lineWidth=3*s;g.strokeStyle='#75401e';g.stroke();
@@ -2240,6 +2242,81 @@ function drawArrivalTag(g,W2,H2,s,n,age){
   g.fillStyle='#8b4a1f';g.font=`600 ${18*s}px "Pixelify Sans",sans-serif`;
   g.fillText(profLabel(n)+(n.youtubeHandle?' · '+n.youtubeHandle:''),x+pad,y+55*s,bw-2*pad);
   g.restore();
+}
+function drawShortsCTA(g,W2,H2,s,age,duration){
+  if(age<duration-3.4)return;
+  const a=clamp((age-(duration-3.4))/.4,0,1),pad=18*s;
+  g.save();g.globalAlpha=a;g.textAlign='center';g.textBaseline='middle';
+  const msg='Quer morar aqui? Comente nome e profissão!';
+  const w=Math.min(W2*.83,610*s),x=(W2-w)/2,y=H2*.72;
+  g.fillStyle='rgba(41,64,27,.92)';rr(g,x,y,w,80*s,12*s);g.fill();
+  g.fillStyle='#fff4ce';g.font=`700 ${24*s}px "Pixelify Sans",sans-serif`;
+  g.fillText(msg,W2/2,y+40*s,w-2*pad);g.restore();
+}
+function shortsSceneFor(n,start,seconds){
+  const route=arrivalRoadRoute(n.x,n.y),dist=[0];
+  for(let i=1;i<route.length;i++)dist.push(dist[i-1]+Math.hypot(route[i].x-route[i-1].x,route[i].y-route[i-1].y));
+  if(route.length){n.x=route[0].x;n.y=route[0].y}
+  cam.x=n.x;cam.y=n.y-15;cam.z=isMobile()?3.7:4.2;
+  return {id:n.id,fromX:n.x,fromY:n.y,route,dist,total:Math.max(1,dist[dist.length-1]),celebrated:false,musicStep:-1};
+}
+function shortsReadDraft(){
+  if(!$('stNewName'))return null;
+  const d={name:$('stNewName').value.trim(),prof:$('stNewProf').value,sex:$('stNewSex').value,custom:$('stNewCustom').value.trim(),handle:$('stNewHandle').value.trim(),pet:$('stNewPet').value};
+  if(!d.name){alert('Informe o nome do inscrito.');$('stNewName').focus();return null}
+  if(d.prof==='custom'&&!d.custom){alert('Informe a profissão personalizada.');return null}
+  if(badName(d.name)||badName(d.custom)||badName(d.handle)){alert('Revise os dados informados.');return null}
+  Object.assign(SHORTS_DRAFT,d);return d;
+}
+function shortsStopPreview(){
+  if(!ARRIVAL_PREVIEW)return;
+  const pv=ARRIVAL_PREVIEW;ARRIVAL_PREVIEW=null;
+  const n=npcs.find(x=>x.id===pv.id);if(n){npcs=npcs.filter(x=>x!==n);activeCount=Math.max(0,activeCount-1);npcVer++}
+  if(pv.raf)cancelAnimationFrame(pv.raf);
+  document.getElementById('shortsPreviewLayer')?.remove();
+  cam.x=pv.cam.x;cam.y=pv.cam.y;cam.z=pv.cam.z;
+  follow=pv.follow;followUntil=pv.followUntil;
+}
+function shortsPreview(d){
+  shortsStopPreview();
+  const old={x:cam.x,y:cam.y,z:cam.z};
+  const n=makeNPC(d.name,d.prof,d.sex,d.custom);npcColors(n);n.active=true;n.inside=false;n.sleeping=false;n.plan=[];n.step=null;
+  n.youtubeHandle=d.handle;n.pet=null;
+  const tile=arrivalTile();n.x=tile.x*T+8;n.y=tile.y*T+12;
+  npcs.push(n);activeCount++;npcVer++;
+  const pv={id:n.id,start:performance.now(),arrivalSeconds:ARRIVALS.seconds,cam:old,follow,followUntil,raf:0};
+  ARRIVAL_PREVIEW=pv;follow=null;followUntil=0;TOUR=null;
+  pv.arrivalScene=shortsSceneFor(n,pv.start,pv.arrivalSeconds);
+  const layer=document.createElement('div');layer.id='shortsPreviewLayer';
+  layer.style.cssText='position:fixed;inset:0;z-index:10050;background:rgba(12,20,12,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:12px;box-sizing:border-box';
+  layer.innerHTML='<div style="color:#fff;font-weight:bold;font-size:18px">🎬 PRÉVIA DO SHORT — sem salvar</div><canvas id="shortsPreviewCanvas" width="540" height="960" style="display:block;max-width:100%;max-height:75vh;aspect-ratio:9/16;object-fit:contain;background:#111;border:3px solid #e9b768;border-radius:12px"></canvas><div style="display:flex;gap:8px"><button class="btn" id="shortsBack">↩️ Voltar e editar</button><button class="btn" id="shortsRecord">🔴 Gravar agora</button></div>';
+  document.body.appendChild(layer);
+  const target=layer.querySelector('canvas'),g=target.getContext('2d');
+  function tick(){if(ARRIVAL_PREVIEW!==pv)return;
+    const age=(performance.now()-pv.start)/1000;
+    const sw=cv.width,sh=cv.height,ratio=target.width/target.height;let ww=sw,hh=sw/ratio;if(hh>sh){hh=sh;ww=sh*ratio}
+    g.drawImage(cv,(sw-ww)/2,(sh-hh)/2,ww,hh,0,0,target.width,target.height);
+    if(STUDIO.captions){drawArrivalTag(g,target.width,target.height,target.width/720,n,age);drawShortsCTA(g,target.width,target.height,target.width/720,age,pv.arrivalSeconds)}
+    if(age>=pv.arrivalSeconds){shortsStopPreview();openRecMenu();return}
+    pv.raf=requestAnimationFrame(tick)
+  }
+  layer.querySelector('#shortsBack').onclick=()=>{shortsStopPreview();openRecMenu()};
+  layer.querySelector('#shortsRecord').onclick=()=>{shortsStopPreview();shortsStartFromDraft(d)};
+  tick();
+}
+function shortsStartFromDraft(d){
+  if(npcs.some(n=>n.name.toLowerCase()===d.name.toLowerCase())&&!confirm('Já existe um morador com este nome. Cadastrar outro?'))return;
+  if(!canRecord()){alert('Este navegador não oferece captura automática de vídeo. Experimente Chrome/Edge no computador ou navegador compatível no Android.');openRecMenu();return}
+  const n=addNPC(d.name,d.prof,d.sex,d.custom,true);
+  n.youtubeHandle=d.handle;n.pet=d.pet?{k:d.pet,name:d.pet==='dog'?'Cachorro':'Gato'}:null;
+  if(!n.active){n.active=true;activeCount++}
+  n.inside=false;n.sleeping=false;n.plan=[];n.step=null;n.idle=0;n.status='Chegando à vila';
+  const entry=arrivalTile();n.x=entry.x*T+8;n.y=entry.y*T+12;n.dir='up';n.moving=true;
+  ARRIVALS.ids=[n.id];ARRIVALS.index=0;ARRIVALS.active=true;
+  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
+  startRec(false);
+  if(!REC){soundRec=oldSound;ARRIVALS.active=false;removeNPC(n.id);return}
+  save();
 }
 function finishArrivalScene(R0){
   if(!R0.arrivalScene)return;
@@ -2268,7 +2345,7 @@ function recFrame(now){
   if(STUDIO.captions&&TOUR&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
   if(REC.arrivalId){
     const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-REC.start)/1000;
-    if(n&&STUDIO.captions)drawArrivalTag(g,W2,H2,s,n,age);
+    if(n&&STUDIO.captions){drawArrivalTag(g,W2,H2,s,n,age);drawShortsCTA(g,W2,H2,s,age,REC.arrivalSeconds)}
     if(age>=REC.arrivalSeconds&&!REC.stopping)stopRec();
   }
   if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
@@ -2295,7 +2372,7 @@ function startRec(auto){
   const R0=REC;mr.onstop=()=>finishRec(R0);
   if(!$('panel').classList.contains('hidden'))togglePanel();
   $('showBtn').style.display='block';$('camBtn').style.display='none';$('recBtn').style.display='block';
-  if(ARRIVALS.active&&STUDIO.mode==='welcome'){REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.arrivalSeconds=ARRIVALS.seconds;REC.arrivalCamera=STUDIO.camera==='auto';REC.hookKind='';TOUR=null;follow=null;pinnedFollow=false;const n=npcs.find(x=>x.id===REC.arrivalId);if(n){const fromX=n.x,fromY=n.y;const destX=CX*T+8,destY=(CY+3)*T+12;const route=arrivalRoadRoute(fromX,fromY),dist=[0];for(let i=1;i<route.length;i++)dist.push(dist[i-1]+Math.hypot(route[i].x-route[i-1].x,route[i].y-route[i-1].y));REC.arrivalScene={id:n.id,fromX,fromY,route,dist,total:Math.max(1,dist[dist.length-1]),celebrated:false};if(route.length){n.x=route[0].x;n.y=route[0].y}cam.x=n.x;cam.y=n.y-15;cam.z=4.4;}}
+  if(ARRIVALS.active&&STUDIO.mode==='welcome'){REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.arrivalSeconds=ARRIVALS.seconds;REC.arrivalCamera=STUDIO.camera==='auto';REC.hookKind='';TOUR=null;follow=null;pinnedFollow=false;const n=npcs.find(x=>x.id===REC.arrivalId);if(n){REC.arrivalScene=shortsSceneFor(n,REC.start,REC.arrivalSeconds);}}
   recFrame(performance.now());mr.start(500);
   if(auto&&!REC.arrivalId){if(STUDIO.mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}else startTour()}else startTour()}if(STUDIO.mode==='welcome'&&!npcs.length&&!auto)startTour();
 }
@@ -2401,8 +2478,10 @@ async function finishRec(R0){
   if(arrivalNpc&&$('vNext'))$('vNext').onclick=()=>{URL.revokeObjectURL(url);closeModal();ARRIVALS.active=false;ARRIVALS.ids=[];STUDIO.mode='welcome';openRecMenu()};
   $('vSave').onclick=()=>doSave(blob,'');$('vSaveO').onclick=()=>doSave(orig,'-original');
 }
-const ARRIVALS={ids:[],index:0,active:false,seconds:18};
-const STUDIO={mode:'episode',format:'horizontal',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party'};
+const ARRIVALS={ids:[],index:0,active:false,seconds:20};
+let ARRIVAL_PREVIEW=null;
+const SHORTS_DRAFT={name:'Heitor',prof:'lenhador',custom:'',sex:'m',handle:'',pet:''};
+const STUDIO={mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party'};
 function openRecMenu(){
  const modes=[['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
@@ -2411,7 +2490,7 @@ function openRecMenu(){
  <div class="bgrp">2. Configuração</div><div class="studio-fields"><label>Formato do vídeo</label><select class="in" id="stFormat"><option value="horizontal">▭ Horizontal 16:9 — YouTube</option><option value="vertical">▯ Vertical 9:16 — Shorts / Reels</option></select>
  <label>Câmera</label><select class="in" id="stCamera"><option value="auto">🎬 Diretor automático</option><option value="manual">🕹️ Manual</option><option value="fixed">📌 Fixa</option></select>
  <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 💬 Legendas, títulos e anúncios</label><label><input type="checkbox" id="stMusic"> 🔊 Áudio e efeitos no vídeo</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
- <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">▶️ Passeio sem gravar</button></div>
+ <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia de 20s</button></div>
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
  $('mX').onclick=closeModal;
  const f=$('stFormat'),camSel=$('stCamera');f.value=STUDIO.format;camSel.value=STUDIO.camera;
@@ -2429,40 +2508,24 @@ function openRecMenu(){
    <label>Personagem</label><select class="in" id="stNewSex"><option value="m">Masculino</option><option value="f">Feminino</option></select>
    <label>@ do inscrito (opcional)</label><input class="in" id="stNewHandle" maxlength="40" placeholder="Ex.: @heitor" autocomplete="off">
    <label>Animal de estimação (opcional)</label><select class="in" id="stNewPet"><option value="">Nenhum</option><option value="dog">🐶 Cachorro</option><option value="cat">🐱 Gato</option></select>
-   <label>Duração do vídeo</label><select class="in" id="stSeconds"><option value="12">12 segundos</option><option value="18">18 segundos</option><option value="25">25 segundos</option><option value="40">40 segundos</option></select>
+   <label>Duração do vídeo</label><select class="in" id="stSeconds"><option value="12">12 segundos</option><option value="18">18 segundos</option><option value="20">20 segundos</option><option value="25">25 segundos</option><option value="40">40 segundos</option></select>
    <p class="tip">Um vídeo por inscrito. Depois de salvar, use “Cadastrar próximo inscrito” para gravar outra chegada.</p>`;
  }
  if(STUDIO.mode==='resident'){extra='<label>Morador em destaque</label><select class="in" id="stResident">'+(npcs.length?npcs.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join(''):'<option value="">Adicione um morador primeiro</option>')+'</select>'}
  $('stExtra').innerHTML=extra;
- if($('stNewProf')){$('stNewProf').onchange=()=>{$('stNewCustom').style.display=$('stNewProf').value==='custom'?'block':'none'};$('stSeconds').value=String(ARRIVALS.seconds);$('stSeconds').onchange=()=>ARRIVALS.seconds=Number($('stSeconds').value);}
+ if($('stNewProf')){ $('stNewName').value=SHORTS_DRAFT.name; $('stNewProf').value=SHORTS_DRAFT.prof; $('stNewSex').value=SHORTS_DRAFT.sex; $('stNewCustom').value=SHORTS_DRAFT.custom; $('stNewCustom').style.display=SHORTS_DRAFT.prof==='custom'?'block':'none'; $('stNewHandle').value=SHORTS_DRAFT.handle; $('stNewPet').value=SHORTS_DRAFT.pet; $('stNewProf').onchange=()=>{$('stNewCustom').style.display=$('stNewProf').value==='custom'?'block':'none'};$('stSeconds').value=String(ARRIVALS.seconds);$('stSeconds').onchange=()=>ARRIVALS.seconds=Number($('stSeconds').value);}
 
  if($('stEvent')){$('stEvent').value=STUDIO.event;$('stEvent').onchange=e=>STUDIO.event=e.target.value}if($('stResident')){$('stResident').value=STUDIO.resident||String(npcs[0]?.id||'');STUDIO.resident=$('stResident').value;$('stResident').onchange=e=>STUDIO.resident=e.target.value}
  function updateSummary(){$('stSummary').textContent=`${STUDIO.format==='horizontal'?'YouTube 16:9':'Shorts 9:16'} · ${STUDIO.camera==='auto'?'câmera automática':STUDIO.camera==='manual'?'câmera manual':'câmera fixa'} · ${STUDIO.captions?'com':'sem'} legendas${STUDIO.mode==='welcome'?' · cadastro e chegada real de novo morador':''}`;}updateSummary();
  }
  update();
  $('stStart').onclick=()=>{if(STUDIO.mode==='resident'&&!npcs.length){alert('Adicione um morador antes de gravar sua história.');return}const mode=STUDIO.mode;
- if(mode==='welcome'){
-   const name=$('stNewName').value.trim(),prof=$('stNewProf').value,sex=$('stNewSex').value;
-   const custom=prof==='custom'?$('stNewCustom').value.trim():'';
-   const handle=$('stNewHandle').value.trim(),pet=$('stNewPet').value;
-   if(!name){alert('Informe o nome do inscrito.');$('stNewName').focus();return}
-   if(prof==='custom'&&!custom){alert('Informe a profissão personalizada.');$('stNewCustom').focus();return}
-   if(badName(name)||badName(custom)||badName(handle)){alert('Confira os dados: há texto bloqueado pelo filtro.');return}
-   if(npcs.some(n=>n.name.toLowerCase()===name.toLowerCase())){if(!confirm('Já existe um morador com este nome. Deseja cadastrar outro?'))return}
-   ARRIVALS.seconds=Number($('stSeconds').value);
-   const n=addNPC(name,prof,sex,custom,true);
-   n.youtubeHandle=handle;n.pet=pet?{k:pet,name:pet==='dog'?'Cachorro':'Gato'}:null;
-   if(!n.active){n.active=true;activeCount++}
-   n.inside=false;n.sleeping=false;n.plan=[];n.step=null;n.idle=0;n.status='Chegando à vila';
-   const entry=arrivalTile();n.x=entry.x*T+8;n.y=entry.y*T+12;n.dir='up';n.moving=true;
-   ARRIVALS.ids=[n.id];ARRIVALS.index=0;ARRIVALS.active=true;
-   save();
- }else ARRIVALS.active=false;
+ if(mode==='welcome'){const d=shortsReadDraft();if(!d)return;shortsStartFromDraft(d);return;}else ARRIVALS.active=false;
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  if(mode==='event'){startRecEvent(STUDIO.event)}else{startRec(mode==='welcome'?false:STUDIO.camera==='auto'&&mode!=='free');if(REC&&mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}}}
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;}
  };
- $('stPreview').onclick=()=>{closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
+ $('stPreview').onclick=()=>{if(STUDIO.mode==='welcome'){const d=shortsReadDraft();if(!d)return;closeModal();shortsPreview(d);return}closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
 }
 
 // ================== BAIRROS ==================
