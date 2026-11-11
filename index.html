@@ -2173,19 +2173,73 @@ function drawCaption(g,W2,H2,s,title,sub,cta,age){
   y+=-6*s;g.font=sf;g.fillStyle=cta?'#fff8e0':'#8b4a1f';for(const l of SL){g.fillText(l,cx,y,bw-pad);y+=31*s}
   g.globalAlpha=1}
 // Direção cinematográfica: personagem real percorre a estrada enquanto é filmado.
+// Rota de entrada usa SOMENTE ladrilhos de estrada, evitando cortar árvores.
+function arrivalRoadRoute(fromX,fromY){
+  const sx=Math.floor(fromX/T),sy=Math.floor(fromY/T),valid=(x,y)=>inB(x,y)&&ground[idx(x,y)]===G_PATH&&walkable(x,y);
+  const q=[],seen=new Set(),prev=new Map();
+  let start=null;
+  for(let r=0;r<=8&&!start;r++)for(let dy=-r;dy<=r&&!start;dy++)for(let dx=-r;dx<=r;dx++){
+    if(Math.abs(dx)+Math.abs(dy)!==r)continue;
+    if(valid(sx+dx,sy+dy)){start={x:sx+dx,y:sy+dy};break}
+  }
+  if(!start)return [{x:fromX,y:fromY}];
+  const key=(x,y)=>y*W+x;
+  q.push(start);seen.add(key(start.x,start.y));
+  let goal=start,best=1e9;
+  for(let at=0;at<q.length;at++){
+    const v=q[at],dist=Math.hypot(v.x-CX,v.y-(CY+3));
+    if(dist<best){best=dist;goal=v}
+    if(dist<=2.3)break;
+    for(const [dx,dy] of [[0,-1],[1,0],[-1,0],[0,1]]){
+      const x=v.x+dx,y=v.y+dy,k=key(x,y);
+      if(!valid(x,y)||seen.has(k))continue;
+      seen.add(k);prev.set(k,v);q.push({x,y});
+    }
+  }
+  const tiles=[];let v=goal;
+  while(v){tiles.push({x:v.x*T+T/2,y:v.y*T+T/2+4});v=prev.get(key(v.x,v.y))}
+  tiles.reverse();
+  return tiles.length?tiles:[{x:fromX,y:fromY}];
+}
 function arrivalSceneTick(now,dt){
   if(!REC||!REC.arrivalScene)return;
   const sc=REC.arrivalScene,n=npcs.find(m=>m.id===sc.id);if(!n)return;
-  const age=(now-REC.start)/1000,walk=clamp((age-1.3)/Math.max(3,REC.arrivalSeconds-6),0,1);
-  // Deslocamento visível: a chegada parte da estrada e termina perto da praça.
-  const smooth=walk*walk*(3-2*walk);
-  n.x=sc.fromX+(sc.toX-sc.fromX)*smooth;n.y=sc.fromY+(sc.toY-sc.fromY)*smooth;
-  n.dir=walk<0.98?'up':'down';n.moving=walk>0&&walk<0.98;n.walkT+=dt*2.8;
-  if(walk>=0.98&&!sc.celebrated){sc.celebrated=true;n.moving=false;sfx('fanfare');confetti(n.x,n.y-14);floatTxt(n.x,n.y-28,'Bem-vindo(a)!')}
-  // Camera acompanha a pessoa, não a floresta nem o ponto de spawn.
-  const tx=n.x,ty=n.y-12;
-  cam.x+=(tx-cam.x)*Math.min(1,dt*8);cam.y+=(ty-cam.y)*Math.min(1,dt*8);
-  cam.z+=(Math.min(5.8,Math.max(4.3,sc.zoom))-cam.z)*Math.min(1,dt*5);
+  const age=(now-REC.start)/1000;
+  const walk=clamp((age-0.8)/Math.max(3,REC.arrivalSeconds-4.8),0,1);
+  const route=sc.route||[{x:sc.fromX,y:sc.fromY}];
+  if(route.length>1){
+    const pos=walk*sc.total;let i=0;
+    while(i<sc.dist.length-1&&sc.dist[i+1]<pos)i++;
+    const p=route[i],next=route[Math.min(i+1,route.length-1)];
+    const length=Math.max(.001,sc.dist[Math.min(i+1,sc.dist.length-1)]-sc.dist[i]);
+    const t=clamp((pos-sc.dist[i])/length,0,1);
+    n.x=p.x+(next.x-p.x)*t;n.y=p.y+(next.y-p.y)*t;
+    const dx=next.x-p.x,dy=next.y-p.y;
+    if(Math.abs(dx)>Math.abs(dy))n.dir=dx>0?'right':'left';
+    else if(Math.abs(dy)>0)n.dir=dy>0?'down':'up';
+  }
+  n.moving=walk>0&&walk<1;n.walkT+=dt*3.5;
+  if(walk>=1&&!sc.celebrated){sc.celebrated=true;n.moving=false;n.dir='down';sfx('fanfare');confetti(n.x,n.y-14);floatTxt(n.x,n.y-28,'Bem-vindo(a)!')}
+  // Mantém o personagem centralizado, sem legendas sobre ele.
+  cam.x+=(n.x-cam.x)*Math.min(1,dt*7);
+  cam.y+=(n.y-15-cam.y)*Math.min(1,dt*7);
+  cam.z+=(4.4-cam.z)*Math.min(1,dt*4);
+}
+// Cartão pequeno no canto: aparece brevemente, sai e libera toda a cena.
+function drawArrivalTag(g,W2,H2,s,n,age){
+  const enter=clamp(age/.35,0,1),leave=clamp((5.1-age)/.55,0,1),alpha=Math.min(enter,leave);
+  if(alpha<=0)return;
+  const pad=13*s,bw=Math.min(W2*.48,390*s),bh=78*s;
+  const x=22*s-(1-enter)*30*s,y=H2*.12;
+  g.save();g.globalAlpha=alpha;
+  g.fillStyle='rgba(255,242,205,.94)';rr(g,x,y,bw,bh,10*s);g.fill();
+  g.lineWidth=3*s;g.strokeStyle='#75401e';g.stroke();
+  g.textAlign='left';g.textBaseline='middle';
+  g.fillStyle='#38210f';g.font=`700 ${24*s}px "Pixelify Sans",sans-serif`;
+  g.fillText('🎉 '+n.name+' chegou!',x+pad,y+28*s,bw-2*pad);
+  g.fillStyle='#8b4a1f';g.font=`600 ${18*s}px "Pixelify Sans",sans-serif`;
+  g.fillText(profLabel(n)+(n.youtubeHandle?' · '+n.youtubeHandle:''),x+pad,y+55*s,bw-2*pad);
+  g.restore();
 }
 function finishArrivalScene(R0){
   if(!R0.arrivalScene)return;
@@ -2206,7 +2260,7 @@ function recFrame(now){
   g.fillStyle='rgba(255,255,255,.2)';g.fillRect(48*s,HY+96*s,W2-96*s,7*s);g.fillStyle='#f6c344';g.fillRect(48*s,HY+96*s,(W2-96*s)*pct,7*s);
   }
   // anúncio
-  if(STUDIO.captions&&ANN&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
+  if(STUDIO.captions&&ANN&&!REC.arrivalId&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
     g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;const tw=Math.min(W2-60*s,Math.max(g.measureText(ANN.t).width,(g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`,g.measureText(ANN.s).width))+60*s);
     g.fillStyle='#f7e2b5';rr(g,-tw/2,-62*s,tw,124*s,16*s);g.fill();g.lineWidth=6*s;g.strokeStyle='#8b4a1f';g.stroke();g.textAlign='center';g.fillStyle='#3b2412';g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.t,0,-16*s,tw-30*s);
     g.fillStyle='#8b4a1f';g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.s,0,32*s,tw-30*s);g.restore()}}
@@ -2214,12 +2268,7 @@ function recFrame(now){
   if(STUDIO.captions&&TOUR&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
   if(REC.arrivalId){
     const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-REC.start)/1000;
-    if(n){
-      const profession=profLabel(n),handle=n.youtubeHandle?` · ${n.youtubeHandle}`:'';
-      const title=age<2.3?'🌟 NOVO INSCRITO!':age<REC.arrivalSeconds-4?`🎉 ${n.name} chegou!`:`🏡 Bem-vindo(a), ${n.name}!`;
-      const sub=age<2.3?'Seu comentário virou um personagem!':age<REC.arrivalSeconds-4?`${profession}${handle}`:'Comente seu NOME + PROFISSÃO para participar!';
-      if(STUDIO.captions){g.save();drawCaption(g,W2,H2,s,title,sub,age>=REC.arrivalSeconds-4,Math.min(age,1));g.restore()}
-    }
+    if(n&&STUDIO.captions)drawArrivalTag(g,W2,H2,s,n,age);
     if(age>=REC.arrivalSeconds&&!REC.stopping)stopRec();
   }
   if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
@@ -2246,7 +2295,7 @@ function startRec(auto){
   const R0=REC;mr.onstop=()=>finishRec(R0);
   if(!$('panel').classList.contains('hidden'))togglePanel();
   $('showBtn').style.display='block';$('camBtn').style.display='none';$('recBtn').style.display='block';
-  if(ARRIVALS.active&&STUDIO.mode==='welcome'){REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.arrivalSeconds=ARRIVALS.seconds;REC.arrivalCamera=STUDIO.camera==='auto';REC.hookKind='';TOUR=null;follow=null;pinnedFollow=false;const n=npcs.find(x=>x.id===REC.arrivalId);if(n){const fromX=n.x,fromY=n.y;const destX=CX*T+8,destY=(CY+3)*T+12;REC.arrivalScene={id:n.id,fromX,fromY,toX:destX,toY:destY,zoom:5.2,celebrated:false};cam.x=fromX;cam.y=fromY-12;cam.z=5.2;}}
+  if(ARRIVALS.active&&STUDIO.mode==='welcome'){REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.arrivalSeconds=ARRIVALS.seconds;REC.arrivalCamera=STUDIO.camera==='auto';REC.hookKind='';TOUR=null;follow=null;pinnedFollow=false;const n=npcs.find(x=>x.id===REC.arrivalId);if(n){const fromX=n.x,fromY=n.y;const destX=CX*T+8,destY=(CY+3)*T+12;const route=arrivalRoadRoute(fromX,fromY),dist=[0];for(let i=1;i<route.length;i++)dist.push(dist[i-1]+Math.hypot(route[i].x-route[i-1].x,route[i].y-route[i-1].y));REC.arrivalScene={id:n.id,fromX,fromY,route,dist,total:Math.max(1,dist[dist.length-1]),celebrated:false};if(route.length){n.x=route[0].x;n.y=route[0].y}cam.x=n.x;cam.y=n.y-15;cam.z=4.4;}}
   recFrame(performance.now());mr.start(500);
   if(auto&&!REC.arrivalId){if(STUDIO.mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}else startTour()}else startTour()}if(STUDIO.mode==='welcome'&&!npcs.length&&!auto)startTour();
 }
