@@ -2672,7 +2672,7 @@ function startRec(auto){
 }
 function stopRec(){if(!REC||REC.stopping)return;REC.stopping=true;$('recBtn').style.display='none';
   // grava um pouquinho a mais: o gravador do celular perde o finalzinho do vídeo ao parar
-  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},REC.ext==='mp4'?3500:900)}
+  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const m of R0.groupWelcome.members){const n=npcs.find(n=>n.id===m.id);if(n){n.arrivalJump=0;n.moving=false;n.status='Novo morador'}}save();refreshPanel(true)}$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},REC.ext==='mp4'?3500:900)}
 // ===== corrige a duração do vídeo (MediaRecorder grava sem duração → YouTube mostra 0s) =====
 // mede a duração real gravada dentro do arquivo (em ms), em vez de usar o relógio
 function mp4MediaMs(buf){
@@ -2792,7 +2792,7 @@ function welcomeGroupTick(now){
    n.arrivalJump=age>=G.celebrate&&age<G.celebrate+1.2?Math.max(0,Math.sin((age-G.celebrate)*Math.PI/1.2))*9:0;
   }
   cam.x+=(cx-cam.x)*.045;cam.y+=(cy-cam.y)*.045;
-  cam.z+=(G.express?1.85:Math.max(1.55,2.8-Math.min(1,G.members.length/12)) -cam.z)*.045;
+  cam.z+=((G.express?1.85:Math.max(1.55,2.8-Math.min(1,G.members.length/12)))-cam.z)*.045;
   clampCam();
  }
  if(age>=G.end&&!R.stopping){
@@ -2801,7 +2801,8 @@ function welcomeGroupTick(now){
  }
 }
 function drawWelcomeGroup(g,w,h,age){
- const G=REC?.groupWelcome;if(!G||age<G.intro)return;
+ const G=REC?.groupWelcome;if(!G)return;
+ if(age<G.intro){pxDrawStoryText(g,w,h,'Hoje a Pixelândia vai receber '+G.members.length+' novos moradores!');return}
  const s=w/720,local=age-G.intro;
  if(local<5){pxDrawStoryText(g,w,h,G.members.length+' novos moradores estão chegando à Pixelândia!');return}
  if(age<G.celebrate){
