@@ -2288,8 +2288,8 @@ function arrivalRoadRoute(fromX,fromY){
   return tiles.length?tiles:[{x:fromX,y:fromY}];
 }
 function arrivalSceneTick(now,dt){
-  const director=REC&&REC.arrivalScene?REC:ARRIVAL_PREVIEW;
-  if(!director||!director.arrivalScene)return;
+  const director=REC&&REC.arrivalId?REC:ARRIVAL_PREVIEW;
+  if(!director||!director.arrivalScene||now<(director.arrivalStart||director.start))return;
   const sc=director.arrivalScene,n=npcs.find(m=>m.id===sc.id);if(!n)return;
   const age=(now-(director.arrivalStart||director.start))/1000;
   // Reserva tempo no final: parar, olhar para a câmera, saltar e só então encerrar.
@@ -2493,12 +2493,21 @@ function pxStoryOverlay(g,w,h,age){
  let msg=parts[index];
  if(REC.studioMode==='welcome'&&ARRIVALS.active){
   const i=ARRIVALS.index,n=npcs.find(x=>x.id===REC.arrivalId),count=ARRIVALS.ids.length;
-  const local=age-((REC.arrivalStart||REC.start)-REC.start)/1000;
-  if(n){
-   const intro=i===0?(count===1?'Hoje chegou um novo morador!':'Hoje nossa vila recebe '+count+' novos moradores! Vamos conhecer cada um.'):'E agora chegou o '+(i+1)+'º morador!';
-   const stages=[intro,'Conheçam '+n.name+'!','Sua profissão é '+profLabel(n)+'.','Vamos acompanhar '+n.name+' chegando à praça!','Seja bem-vindo(a), '+n.name+'!'];
-   msg=stages[Math.min(stages.length-1,Math.floor(Math.max(0,local)/Math.max(1,REC.arrivalSeconds/stages.length)))];
-   if(i===count-1&&local>=REC.arrivalSeconds)msg='Agora somos '+npcs.length+' moradores! Que nossa história continue!';
+  const intro=REC.welcomeIntro||0,local=age-((REC.arrivalStart-REC.start)/1000);
+  const before=REC.welcomeBefore??Math.max(0,npcs.length-count),homes=REC.welcomeBuildings??0;
+  if(age<intro){
+    const scene=before===0
+      ?'Até agora, nossa vila estava esperando seus primeiros habitantes...'
+      :before===1?'Nossa vila começou com apenas um morador, mas já tem muita história para contar!'
+      :'A vida segue agitada por aqui! Nossa vila já tinha '+before+' moradores.';
+    const structures=homes===0?'Ainda temos muito espaço para crescer e construir sonhos.':homes===1?'Já existe uma construção pronta, e muitas ideias esperando a sua vez.':'Já são '+homes+' construções prontas, mas sempre cabe mais uma aventura!';
+    const lines=[scene,structures,'E adivinhem? Hoje a estrada vai ficar movimentada!','Temos '+count+' '+(count===1?'novo morador chegando!':'novos moradores chegando!')+' Vamos conhecer cada um!'];
+    msg=lines[Math.min(lines.length-1,Math.floor(age/intro*lines.length))];
+  }else if(n){
+    const job=profLabel(n),first=i===0?'E lá vem a primeira novidade!':'E a nossa história continua! Chegou a vez do '+(i+1)+'º morador!';
+    const stages=[first,'Olha quem apareceu: '+n.name+'!','Com a profissão de '+job+', '+n.name+' traz novos talentos para a vila!','Agora é hora de atravessar a estrada e conhecer a praça!','Que chegada especial! Boas-vindas, '+n.name+'!'];
+    msg=stages[Math.min(stages.length-1,Math.floor(Math.max(0,local)/Math.max(1,REC.arrivalSeconds/stages.length)))];
+    if(i===count-1&&local>=REC.arrivalSeconds)msg='Uau! Agora somos '+npcs.length+' moradores! E essa aventura está só começando!';
   }
  }if(!msg)return;
  const scale=w/720,maxW=w*.86,fs=Math.max(17,Math.round(25*scale));
@@ -2536,8 +2545,15 @@ function recFrame(now){
   if(REC.vote){drawVoteOverlay(g,W2,H2,hAge,REC.vote.options,REC.vote.seconds);if(STUDIO.music&&Math.floor(hAge/5)!==REC.vote.musicStep&&hAge<REC.vote.seconds-2){REC.vote.musicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.vote.seconds&&!REC.stopping)stopRec()}
   if(REC.inviteSeconds){inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.inviteSeconds&&!REC.stopping)stopRec()}
   if(REC.arrivalId){
-    const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-(REC.arrivalStart||REC.start))/1000;
-    if(n&&STUDIO.captions){drawArrivalTag(g,W2,H2,s,n,age);(ARRIVALS.index===ARRIVALS.ids.length-1&&age>=REC.arrivalSeconds?drawShortsCTA(g,W2,H2,s,age-REC.arrivalSeconds,4):null)}
+    if(!REC.arrivalScene&&now>=REC.arrivalStart){
+      const first=npcs.find(x=>x.id===REC.arrivalId);
+      if(first){first.status='Chegando à vila';REC.arrivalScene=shortsSceneFor(first,REC.arrivalStart,REC.arrivalSeconds)}
+    }
+    const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-REC.arrivalStart)/1000;
+    if(n&&STUDIO.captions&&age>=0){
+      if(age<REC.arrivalSeconds)drawArrivalTag(g,W2,H2,s,n,age);
+      if(ARRIVALS.index===ARRIVALS.ids.length-1&&age>=REC.arrivalSeconds)drawShortsCTA(g,W2,H2,s,age-REC.arrivalSeconds,4);
+    }
     if(age>=REC.arrivalSeconds&&!REC.stopping){
       if(ARRIVALS.index+1<ARRIVALS.ids.length){
         finishArrivalScene({arrivalScene:REC.arrivalScene});
@@ -2572,7 +2588,14 @@ function startRec(auto){
   const R0=REC;mr.onstop=()=>finishRec(R0);
   if(!$('panel').classList.contains('hidden'))togglePanel();
   $('showBtn').style.display='block';$('camBtn').style.display='none';$('recBtn').style.display='block';
-  if(ARRIVALS.active&&STUDIO.mode==='welcome'){REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.arrivalStart=REC.start;REC.arrivalSeconds=ARRIVALS.seconds;REC.arrivalCamera=STUDIO.camera==='auto';REC.hookKind='';TOUR=null;follow=null;pinnedFollow=false;const n=npcs.find(x=>x.id===REC.arrivalId);if(n){REC.arrivalScene=shortsSceneFor(n,REC.start,REC.arrivalSeconds);}}
+  if(ARRIVALS.active&&STUDIO.mode==='welcome'){
+    REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.welcomeIntro=9;
+    REC.arrivalStart=REC.start+REC.welcomeIntro*1000;REC.arrivalSeconds=ARRIVALS.seconds;
+    REC.welcomeBefore=npcs.length-ARRIVALS.ids.length;
+    REC.welcomeBuildings=buildings.filter(b=>b.done).length;
+    REC.arrivalCamera=STUDIO.camera==='auto';REC.hookKind='';TOUR=null;follow=null;pinnedFollow=false;
+    cam.x=CX*T+8;cam.y=CY*T+8;cam.z=isMobile()?1.8:2.2;
+  }
   recFrame(performance.now());mr.start(500);
   if(auto&&!REC.arrivalId){if(STUDIO.mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}else startTour()}else startTour()}if(STUDIO.mode==='welcome'&&!npcs.length&&!auto)startTour();
 }
