@@ -2197,12 +2197,18 @@ function invitePreview(){
 let INVITE_PREVIEW_CAM={x:0,y:0,z:1},INVITE_PREVIEW_FOLLOW=null,INVITE_PREVIEW_PIN=false;
 function inviteRecord(){
  if(npcs.length){alert('O mundo já possui moradores. Grave o convite antes do primeiro cadastro.');return}
+ const voice=studioPreparedVoice('invitation',studioVoiceScript('invitation'));
+ if(voice===false){openRecMenu();return}
  STUDIO.mode='invitation';
  const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  closeModal();if(!inviteBegin(false)){soundRec=oldSound;delete STUDIO.restoreSound;return}
- startRec(false,'vertical');
+ startRec(false,'vertical',!!voice);
  if(!REC){TOUR=null;soundRec=oldSound;delete STUDIO.restoreSound;return}
  REC.inviteSeconds=INVITE.seconds;REC.hookKind='';REC.inviteMusicStep=-1;
+ if(voice){
+  attachTourVoice(voice,voice.script.main);
+  REC.inviteSeconds=REC.tourDuration;
+ }
 }
 function drawInviteSpot(){
   if(!TOUR||!TOUR.invite)return;const x=CX*T-10,y=CY*T+12,b=Math.round(Math.sin(gtime*3)*1.5);const dm=TOUR.demo;
@@ -2291,6 +2297,18 @@ function startWelcomeUpdate(now){
  }
  const {result,ballot}=rec.welcomeReplay;
  rec.welcomeUpdate=createWelcomeUpdate(now,welcomeUpdateShots(result,residents),ballot);
+ if(rec.voice){
+  const update=rec.welcomeUpdate;
+  update.shots.forEach((shot,i)=>{
+   shot.voice=voiceSection(rec.voice,rec.voice.script.updates[i],shot.dur);
+   shot.dur=shot.voice.duration;
+  });
+  update.ballotAt=update.shots.reduce((sum,shot)=>sum+shot.dur,0);
+  update.ballotVoice=ballot?voiceSection(rec.voice,rec.voice.script.ballot,VOTE_BALLOT_SECONDS):null;
+  update.inviteAt=update.ballotAt+(update.ballotVoice?.duration||0);
+  update.inviteVoice=voiceSection(rec.voice,rec.voice.script.closing,LIVING_INVITE_SECONDS);
+  update.end=update.inviteAt+update.inviteVoice.duration;
+ }
 }
 function welcomeUpdateTick(now){
  const preview=WELCOME_PREVIEW;
@@ -2592,6 +2610,8 @@ function welcomeStartBatch(replay=null){
  if(!replay&&!WELCOME_QUEUE.length){alert('Adicione pelo menos um morador à lista.');return}
  const ballot=replay?replay.ballot:STUDIO.welcomeVote?voteReadOptions('stWelcomeVoteOption'):null;
  if(!replay&&STUDIO.welcomeVote&&!ballot)return;
+ const voice=studioPreparedVoice('welcome',welcomeVoiceScript(replay,ballot));
+ if(voice===false)return;
  if(!canRecord()){alert('Este navegador não permite a gravação automática.');return}
  if(scenes){
   try{for(const scene of scenes)cameraScriptExtract(scene.lines)}
@@ -2600,7 +2620,7 @@ function welcomeStartBatch(replay=null){
  if(replay)Object.assign(STUDIO,replay.settings,{mode:'welcome'});
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  ARRIVALS.active=false;
- startRec(false);
+ startRec(false,STUDIO.format,!!voice);
  if(!REC){soundRec=oldSound;delete STUDIO.restoreSound;return}
  const added=residents||WELCOME_QUEUE.map(d=>{
   const n=addNPC(d.name,d.prof,d.sex,d.custom,true);
@@ -2620,6 +2640,25 @@ function welcomeStartBatch(replay=null){
   REC.groupWelcome=createWelcomeGroup(added,style==='express',REC.c.width/REC.c.height);
   REC.arrivalId=null;REC.arrivalScene=null;REC.welcomeIntro=0;REC.story=null;
   follow=null;pinnedFollow=false;TOUR=null;
+ }
+ if(voice){
+  REC.voice=voice;
+  STUDIO.captions=true;
+  scenes=null;
+  voice.opening=voiceSection(voice,voice.script.opening,group?REC.groupWelcome.walkEnd:REC.welcomeIntro);
+  voice.entries=voice.script.entries.map(lines=>voiceSection(voice,lines,group?WELCOME_SPOTLIGHT_SECONDS:seconds));
+  if(group){
+   const G=REC.groupWelcome;
+   G.walkEnd=voice.opening.duration;
+   G.slotSeconds=Math.max(...voice.entries.map(entry=>entry.duration));
+   G.celebrate=G.walkEnd+G.slotSeconds*voice.entries.length;
+   voice.celebrate=voiceSection(voice,voice.script.celebrate,4);
+   G.cta=G.celebrate+voice.celebrate.duration;
+  }else{
+   REC.welcomeIntro=voice.opening.duration;
+   REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
+   REC.arrivalSeconds=voice.entries[0].duration;
+  }
  }
  if(scenes){
   const intro=cameraScriptExtract(scenes.filter(x=>x.type==='village').flatMap(x=>x.lines));
@@ -2701,8 +2740,7 @@ const EVENT_STORIES={
   'Se o disco levar alguém, já temos a primeira pergunta quando voltar. Como era lá dentro?'
  ]
 };
-function pxStoryText(){
- const mode=REC?.studioMode||STUDIO.mode;
+function pxStoryText(mode=REC?.studioMode||STUDIO.mode){
  const count=npcs.length,finished=buildings.filter(b=>b.done).length;
  const houses=buildings.filter(b=>b.done&&isHouse(b.type)).length;
  const otherBuildings=finished-houses;
@@ -2798,7 +2836,19 @@ function recFrame(now){
   if(REC.welcomeUpdate){
     const update=REC.welcomeUpdate;
     const age=(now-update.start)/1000;
-    drawWelcomeUpdate(g,W2,H2,age,update,REC.stopping);
+    if(REC.voice){
+      if(age>=update.inviteAt){drawLivingInvite(g,W2,H2);drawVoiceSection(g,W2,H2,REC.voice,update.inviteVoice,age-update.inviteAt,null)}
+      else if(update.ballot&&age>=update.ballotAt){
+        drawWelcomeUpdate(g,W2,H2,age,update,false);
+        drawVoiceSection(g,W2,H2,REC.voice,update.ballotVoice,age-update.ballotAt,null);
+      }else{
+        let local=age;
+        for(const shot of update.shots){
+          if(local<shot.dur){drawVoiceSection(g,W2,H2,REC.voice,shot.voice,local);break}
+          local-=shot.dur;
+        }
+      }
+    }else drawWelcomeUpdate(g,W2,H2,age,update,REC.stopping);
     if(update.ballot&&age>=update.ballotAt+VOTE_BALLOT_FADE)REC.shownBallot=update.ballot;
     $('recBtn').textContent=`⏹ Parar ${Math.floor(hAge)}s`;
     return;
@@ -2806,16 +2856,24 @@ function recFrame(now){
   if(REC.groupWelcome&&REC.stopping){drawLivingInvite(g,W2,H2);return}
   if(REC.dayRecap){
     if(REC.stopping)drawShortsCTA(g,W2,H2,s,(now-REC.dayRecap.inviteAt)/1000+1.3,4);
-    else drawDayRecap(g,W2,H2,REC.dayRecap,now);
+    else if(REC.voice){
+      const recap=REC.dayRecap;
+      if(recap.morningAt!=null)drawVoiceSection(g,W2,H2,REC.voice,REC.voice.morning,(now-recap.morningAt)/1000);
+      else if(recap.nightStarted){
+        const nightAge=(now-recap.nightAt)/1000;
+        if(nightAge<REC.voice.night.duration)drawVoiceSection(g,W2,H2,REC.voice,REC.voice.night,nightAge);
+        else drawDayRecap(g,W2,H2,recap,now);
+      }else drawVoiceSection(g,W2,H2,REC.voice,REC.voice.opening,hAge);
+    }else drawDayRecap(g,W2,H2,REC.dayRecap,now);
     $('recBtn').textContent=`⏹ Parar ${Math.floor(hAge)}s`;
     return;
   }
   // anúncio
-  if(STUDIO.captions&&ANN&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
+  if(STUDIO.captions&&ANN&&!REC.voice&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
     g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;const tw=Math.min(W2-60*s,Math.max(g.measureText(ANN.t).width,(g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`,g.measureText(ANN.s).width))+60*s);
     g.fillStyle='#f7e2b5';rr(g,-tw/2,-62*s,tw,124*s,16*s);g.fill();g.lineWidth=6*s;g.strokeStyle='#8b4a1f';g.stroke();g.textAlign='center';g.fillStyle='#3b2412';g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.t,0,-16*s,tw-30*s);
     g.fillStyle='#8b4a1f';g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.s,0,32*s,tw-30*s);g.restore()}}
-  if(STUDIO.captions&&TOUR&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
+  if(STUDIO.captions&&TOUR&&!REC.voice&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
   if(REC.vote){
     drawVoteOverlay(g,W2,H2,hAge,REC.vote);
     if(REC.vote.voice&&!REC.stopping)playStudioVoice(REC.vote.voice,hAge,RECDEST);
@@ -2823,7 +2881,7 @@ function recFrame(now){
     if(STUDIO.music&&Math.floor(hAge/5)!==REC.vote.musicStep&&hAge<REC.vote.seconds-2){REC.vote.musicStep=Math.floor(hAge/5);sfx('tune')}
     if(hAge>=REC.vote.seconds&&!REC.stopping)stopRec();
   }
-  if(REC.inviteSeconds){inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.inviteSeconds&&!REC.stopping)stopRec()}
+  if(REC.inviteSeconds){if(!REC.voice)inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if((REC.voice?TOUR?.hold:hAge>=REC.inviteSeconds)&&!REC.stopping)stopRec()}
   if(REC.arrivalId&&!REC.groupWelcome){
     if(!REC.arrivalScene&&now>=REC.arrivalStart){
       const first=npcs.find(x=>x.id===REC.arrivalId);
@@ -2839,6 +2897,7 @@ function recFrame(now){
       if(ARRIVALS.index+1<ARRIVALS.ids.length){
         finishArrivalScene({arrivalScene:REC.arrivalScene});
         ARRIVALS.index++;REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.arrivalStart=now;
+        if(REC.voice)REC.arrivalSeconds=REC.voice.entries[ARRIVALS.index].duration;
         const next=npcs.find(x=>x.id===REC.arrivalId);
         if(next){next.status='Chegando à vila';REC.arrivalScene=shortsSceneFor(next,now,REC.arrivalSeconds)}
       }else if(REC.welcomeReplay&&age>=REC.arrivalSeconds+(REC.customWelcome?REC.customWelcome.ending-4:0)){
@@ -2846,16 +2905,33 @@ function recFrame(now){
       }else if(age>=REC.arrivalSeconds+(REC.customWelcome?.ending||4))stopRec();
     }
   }
-  if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
-  if(REC?.groupWelcome&&STUDIO.captions)drawWelcomeGroup(g,W2,H2,hAge,REC.groupWelcome);
+  if(STUDIO.captions&&!REC.voice&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
+  if(REC.voice){
+    const voice=REC.voice,group=REC.groupWelcome;
+    if(group){
+      const slot=welcomeSpotlight(group,hAge);
+      if(hAge<group.walkEnd)drawVoiceSection(g,W2,H2,voice,voice.opening,hAge);
+      else if(slot>=0)drawVoiceSection(g,W2,H2,voice,voice.entries[slot],hAge-group.walkEnd-slot*group.slotSeconds);
+      else drawVoiceSection(g,W2,H2,voice,voice.celebrate,hAge-group.celebrate);
+    }else if(REC.arrivalId){
+      if(hAge<REC.welcomeIntro)drawVoiceSection(g,W2,H2,voice,voice.opening,hAge);
+      else drawVoiceSection(g,W2,H2,voice,voice.entries[ARRIVALS.index],(now-REC.arrivalStart)/1000);
+    }else if(voice.tour&&TOUR){
+      const step=TOUR.steps[TOUR.i];
+      if(step.voice)drawVoiceSection(g,W2,H2,voice,step.voice,TOUR.t);
+      else if(step.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);
+      else drawCaption(g,W2,H2,s,step.title,capSub(step),step.cta,TOUR.t);
+    }else if(!voice.main||hAge<voice.main.duration)drawVoiceSection(g,W2,H2,voice,voice.main,hAge);
+  }
+  else if(REC.groupWelcome&&STUDIO.captions)drawWelcomeGroup(g,W2,H2,hAge,REC.groupWelcome);
  else if(REC&&!REC.vote&&REC.studioMode!=='vote'&&(!REC.auto||!TOUR))pxStoryOverlay(g,W2,H2,hAge);
   // No encerramento, esconder a legenda narrativa e manter o convite por cima.
-  if(REC&&REC.arrivalId&&STUDIO.captions&&ARRIVALS.index===ARRIVALS.ids.length-1){
+  if(REC&&!REC.voice&&REC.arrivalId&&STUDIO.captions&&ARRIVALS.index===ARRIVALS.ids.length-1){
     const finalAge=(now-REC.arrivalStart)/1000-REC.arrivalSeconds;
     if(finalAge>=(REC.customWelcome?REC.customWelcome.ending-4:0))drawShortsCTA(g,W2,H2,s,finalAge-(REC.customWelcome?REC.customWelcome.ending-4:0),4);
   }
   // Episódios automáticos: encerramento fixo, idêntico ao convite da prévia.
-  if(REC&&REC.auto&&REC.tourDuration&&hAge>=REC.tourDuration&&!REC.stopping)stopRec();
+  if(REC.auto&&REC.tourDuration&&(REC.voice?TOUR?.hold:hAge>=REC.tourDuration)&&!REC.stopping)stopRec();
   // marca d'água
   if(STUDIO.captions){g.textAlign='center';g.textBaseline='middle';g.font=`700 ${28*s}px "Pixelify Sans",sans-serif`;g.lineWidth=6*s;g.strokeStyle='rgba(30,18,8,.8)';
   }
@@ -2864,7 +2940,8 @@ function recFrame(now){
     const lim={rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[e.k]||60;
     if((e.seen&&!on&&!e.end)){e.end=now}if(REC.customStudio){if((now-REC.start)/1000>=REC.customStudio.duration)stopRec()}else if((e.end&&now-e.end>3500)||el2>lim){stopRec();return}}
   const el=(now-REC.start)/1000;$('recBtn').textContent=`⏹ Parar ${Math.floor(el/60)}:${String(Math.floor(el%60)).padStart(2,'0')}`;
-  if(!REC.groupWelcome&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!REC.ev&&el>(REC.tourDuration?REC.tourDuration+5:STUDIO.mode==='resident'?300:STUDIO.mode==='free'?600:180))stopRec();
+  const timeLimit=REC.voice?.tour&&TOUR?Infinity:REC.tourDuration?REC.tourDuration+5:REC.studioMode==='resident'?300:REC.studioMode==='free'?600:180;
+  if(!REC.groupWelcome&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!REC.ev&&el>timeLimit)stopRec();
 }
 function canRecord(){return !!(cv.captureStream&&window.MediaRecorder)}
 function startRecEvent(k,plan){
@@ -2911,6 +2988,7 @@ function configureWelcomeArrival(seconds){
 function stopRec(){if(!REC||REC.stopping)return;REC.stopping=true;$('recBtn').style.display='none';
   stopStudioVoice(REC.vote?.voice);
   stopStudioVoice(REC.customStudio?.voice);
+  stopStudioVoice(REC.voice);
   if(REC.dayRecap)REC.dayRecap.inviteAt=performance.now();
   // grava um pouquinho a mais: o gravador do celular perde o finalzinho do vídeo ao parar
   setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const {resident:n} of R0.groupWelcome.members){n.arrivalJump=0;n.moving=false;n.status='Novo morador';n.plan=[goNear(CX,CY,3)]}save();refreshPanel(true)}$('recBtn').style.display='none';$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},(REC.dayRecap||REC.groupWelcome||REC.welcomeUpdate)?4000:REC.ext==='mp4'?3500:900)}
@@ -3063,7 +3141,7 @@ function createWelcomeGroup(residents,express,ratio){
 }
 function welcomeSpotlight(group,age){
  if(age<group.walkEnd||age>=group.celebrate)return -1;
- return Math.floor((age-group.walkEnd)/WELCOME_SPOTLIGHT_SECONDS);
+ return Math.floor((age-group.walkEnd)/(group.slotSeconds||WELCOME_SPOTLIGHT_SECONDS));
 }
 function welcomeGroupTick(now){
  const R=WELCOME_PREVIEW||REC;if(!R?.groupWelcome||R.stopping)return;
@@ -3317,6 +3395,81 @@ const VOTE_BALLOT_FADE=.35;
 let VOTE_PREVIEW=null;
 const VOTE_NARRATION={enabled:false,url:'',token:'',audio:new Map()};
 const EVENT_NARRATION={enabled:false,audio:new Map()};
+const OTHER_NARRATION=new Map();
+function studioNarration(mode){
+ if(mode==='vote')return VOTE_NARRATION;
+ if(mode==='event')return EVENT_NARRATION;
+ if(!OTHER_NARRATION.has(mode))OTHER_NARRATION.set(mode,{enabled:false,audio:new Map()});
+ return OTHER_NARRATION.get(mode);
+}
+const STUDIO_INVITE_LINE='Quer morar aqui? Comente seu nome e sua profissão!';
+function welcomeVoiceScript(replay,ballot){
+ const residents=replay?replay.ids.map(id=>npcs.find(n=>n.id===id)).filter(Boolean):WELCOME_QUEUE;
+ if(!residents.length)return null;
+ const style=replay?.style||WELCOME_STYLE;
+ const group=style==='group'||style==='express'||(style==='auto'&&residents.length>=5);
+ const opening=group?[residents.length===1?'Tem gente nova chegando!':`Olha a estrada! Hoje chegam ${fmt(residents.length)} novos moradores.`]:
+  welcomeOpeningStory(npcs.length-(replay?residents.length:0),residents.length,buildings.filter(b=>b.done&&isHouse(b.type)).length);
+ const entries=style==='express'?Array.from({length:Math.ceil(residents.length/WELCOME_BATCH_SIZE)},(_,i)=>
+  [residents.slice(i*WELCOME_BATCH_SIZE,(i+1)*WELCOME_BATCH_SIZE).map(n=>n.name).join(', ')+'. Boas-vindas!']):
+  residents.map((n,i)=>group?[`${n.name}, ${profLabel(n)}. Boas-vindas!`]:welcomeResidentStory(n,i));
+ const updates=welcomeUpdateShots(replay?replay.result:STUDIO.welcomeResult,residents,!replay)
+  .map(shot=>[shot.title+'. '+shot.sub.replaceAll(' · ','. ')]);
+ return {opening,entries,updates,celebrate:group?['A partir de hoje, esta vila também é de vocês.']:[],
+  ballot:ballot?[voteBallotSpeech(ballot)]:[],closing:[STUDIO_INVITE_LINE]};
+}
+function studioVoiceScript(mode,highlight,ballot,replay){
+ if(mode==='welcome')return welcomeVoiceScript(replay,ballot);
+ if(mode==='recap')return {
+  opening:[highlight?`O destaque do dia ${highlight.d} foi este. ${highlight.t}`:`Vamos relembrar mais um dia em ${villageName}.`],
+  night:['A luz vai sumindo e a vila desacelera. Até amanhã, vizinhança!'],
+  morning:[`Bom dia, ${villageName}! Um novo capítulo começa agora. ${STUDIO_INVITE_LINE}`]
+ };
+ if(mode==='invitation')return {main:['Imagina um mundo esperando seu primeiro morador.','Por enquanto, ninguém mora aqui. Quem vai abrir caminho?','O lago está tão quieto que até os peixes estranharam.','Tem floresta de sobra para quem quiser começar a construir.',STUDIO_INVITE_LINE]};
+ if(mode==='resident'&&!npcs.some(n=>String(n.id)===STUDIO.resident))return null;
+ const result=mode==='episode'&&STUDIO.episodeVote&&STUDIO.camera==='auto'?constructionVoteOpening():null;
+ return {main:[...(result?[result.title+' '+result.sub]:[]),...pxStoryText(mode),STUDIO_INVITE_LINE]};
+}
+function studioPreparedVoice(mode,script){
+ const {audio,enabled}=studioNarration(mode);
+ if(!enabled)return null;
+ if(!script||!Object.values(script).flat(2).every(text=>audio.has(text))){
+  alert('Gere a narração deste roteiro ou desative a opção de voz para gravar.');
+  return false;
+ }
+ return {script,audio};
+}
+function voiceSection(voice,lines,duration){
+ const section={lines,cues:[]};
+ setScriptCardTiming(section,duration,voice.audio);
+ return section;
+}
+function attachTourVoice(voice,lines){
+ voice.tour=true;
+ const steps=TOUR.steps;
+ steps.forEach((step,i)=>{
+  const selected=lines.filter((_,j)=>Math.round(j*(steps.length-1)/Math.max(1,lines.length-1))===i);
+  if(!selected.length)return;
+  step.voice=voiceSection(voice,selected,step.dur);
+  step.dur=step.voice.duration;
+ });
+ REC.voice=voice;
+ REC.tourDuration=steps.reduce((sum,step)=>sum+step.dur,0);
+}
+function drawVoiceSection(g,w,h,voice,section,age,at=.73){
+ if(!section||age<0)return;
+ const index=section.cardStarts.findLastIndex(start=>start<=age);
+ if(index<0)return;
+ const text=section.lines[index];
+ if(!REC.stopping){
+  if(voice.section!==section||voice.index!==index){
+   voice.section=section;voice.index=index;
+   voice.cue={at:section.cardStarts[index],audio:voice.audio.get(text)};
+  }
+  playStudioClip(voice,voice.cue,age,RECDEST);
+ }
+ if(at!==null)drawWelcomeCard(g,w,h,text,'',at);
+}
 const EVENT_DELIVERY={
  fire:['anxious','excited','thoughtful'],
  rain:['anxious','playful','thoughtful'],
@@ -3352,6 +3505,9 @@ function stopStudioVoice(voice){
 }
 function playStudioVoice(voice,age,destination){
  const cue=voice.cues.findLast(item=>age>=item.at);
+ playStudioClip(voice,cue,age,destination);
+}
+function playStudioClip(voice,cue,age,destination){
  if(!cue||voice.current===cue||!destination||AC.state!=='running')return;
  stopStudioVoice(voice);
  voice.current=cue;
@@ -3369,23 +3525,30 @@ function playStudioVoice(voice,age,destination){
  };
  source.start(0,offset);
 }
-function openStudioNarration(){
- const isEvent=STUDIO.mode==='event',event=STUDIO.event;
- const narration=isEvent?EVENT_NARRATION:VOTE_NARRATION;
+function openStudioNarration(highlight,replay=null){
+ const mode=STUDIO.mode,isEvent=mode==='event',event=STUDIO.event;
+ const narration=studioNarration(mode);
  let texts,delivery;
  if(isEvent){
   texts=EVENT_STORIES[event];
   delivery=text=>EVENT_DELIVERY[event]?.[EVENT_STORIES[event].indexOf(text)]||(text.includes('?')?'curious':'warmly');
- }else{
+ }else if(mode==='vote'){
   const vote=votePlan(false);
   if(!vote)return;
   texts=voteNarrationTexts(vote);
   const ballot=voteBallotSpeech(vote.options);
   delivery=text=>text===ballot?'excited':text.includes('?')?'curious':'warmly';
+ }else{
+  const ballot=mode==='welcome'?(replay?replay.ballot:STUDIO.welcomeVote?voteReadOptions('stWelcomeVoteOption'):null):null;
+  if(mode==='welcome'&&!replay&&STUDIO.welcomeVote&&!ballot)return;
+  const script=studioVoiceScript(mode,highlight,ballot,replay);
+  if(!script){alert(mode==='welcome'?'Adicione moradores à lista do vídeo.':'Escolha um morador para narrar.');return}
+  texts=[...new Set(Object.values(script).flat(2))];
+  delivery=text=>text.includes('?')?'curious':text.includes('Boa')||text.includes('!')?'excited':mode==='recap'?'thoughtful':'warmly';
  }
- if(!texts.length){alert('Inclua pelo menos um card com texto no roteiro.');return}
  const cached=texts.every(text=>narration.audio.has(text));
  modal(`<h3><span>Narração com ElevenLabs</span><button class="btn sm" id="mX">Voltar</button></h3>
+ <p class="tip">Eleven v4 · voz configurada no serviço de narração</p>
  <label for="voiceService">URL do serviço de narração</label><input class="in" id="voiceService" type="url" placeholder="https://…">
  <label for="voiceToken">Código de acesso ao serviço</label><input class="in" id="voiceToken" type="password" autocomplete="off">
  <details><summary>Texto dos cards</summary><ol>${texts.map(text=>'<li>'+esc(text)+'</li>').join('')}</ol></details>
@@ -3394,11 +3557,11 @@ function openStudioNarration(){
  const url=$('voiceService'),token=$('voiceToken'),generate=$('voiceGenerate'),status=$('voiceStatus'),use=$('voiceUse');
  url.value=VOTE_NARRATION.url;token.value=VOTE_NARRATION.token;
  let controller;
- $('mX').onclick=()=>{controller?.abort();openRecMenu()};
+ $('mX').onclick=()=>{controller?.abort();openRecMenu(highlight)};
  use.onclick=()=>{
   narration.enabled=true;
-  if(isEvent)STUDIO.captions=true;
-  openRecMenu();
+  STUDIO.captions=true;
+  openRecMenu(highlight);
  };
  generate.onclick=async()=>{
   let endpoint;
@@ -3427,7 +3590,7 @@ function openStudioNarration(){
    }
    if(signal.aborted)return;
    narration.audio=clips;
-   status.textContent=isEvent?'Narração pronta. Use Ver roteiro para ouvir os cards.':'Narração pronta. Use a Prévia para ouvir com os cards.';
+   status.textContent='Narração pronta. Selecione Usar no vídeo para gravar com voz.';
    use.disabled=false;
   }catch(e){if(!signal.aborted){status.textContent=e.message;use.disabled=!cached}}
   finally{generate.disabled=false}
@@ -3557,14 +3720,23 @@ function dayRecapHighlights(){
 }
 function startDayRecap(highlight){
  if(REC||FF){alert('Aguarde a gravação ou a passagem da noite terminar.');return}
+ const voice=studioPreparedVoice('recap',studioVoiceScript('recap',highlight));
+ if(voice===false)return;
  ARRIVALS.active=false;
  closeModal();
  const oldSound=soundRec;
  soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
- startRec(false);
+ startRec(false,STUDIO.format,!!voice);
  if(!REC){soundRec=oldSound;delete STUDIO.restoreSound;return}
  const plaza={x:CX*T+8,y:CY*T+8,z:isMobile()?2.3:2.8};
  REC.dayRecap={highlight,plaza,closingDay:day()};
+ if(voice){
+  STUDIO.captions=true;
+  REC.voice=voice;
+  voice.opening=voiceSection(voice,voice.script.opening,7.5);
+  voice.night=voiceSection(voice,voice.script.night,0);
+  voice.morning=voiceSection(voice,voice.script.morning,6.5);
+ }
  TOUR=null;follow=null;pinnedFollow=false;
  Object.assign(cam,highlight?{x:highlight.x,y:highlight.y,z:plaza.z}:plaza);
  clampCam();
@@ -3572,15 +3744,16 @@ function startDayRecap(highlight){
 function dayRecapTick(now){
  const recap=REC?.dayRecap;
  if(!recap||REC.stopping)return;
- if(!recap.nightStarted&&(now-REC.start)>=7500){
+ if(!recap.nightStarted&&(now-REC.start)>=(REC.voice?.opening.duration||7.5)*1000){
   recap.nightStarted=true;
+  recap.nightAt=now;
   Object.assign(cam,recap.plaza);
   clampCam();
   endDay({dawn:420,realTime:true});
  }
- if(recap.nightStarted&&!FF&&day()>recap.closingDay){
+ if(recap.nightStarted&&!FF&&day()>recap.closingDay&&now-recap.nightAt>=(REC.voice?.night.duration||0)*1000){
   recap.morningAt??=now;
-  if(now-recap.morningAt>=6500)stopRec();
+  if(now-recap.morningAt>=(REC.voice?.morning.duration||6.5)*1000)stopRec();
  }
 }
 function drawDayRecap(g,w,h,recap,now){
@@ -3672,7 +3845,7 @@ function studioEventOutline(){
   clip.start();
  });
 }
-function openRecMenu(){
+function openRecMenu(selectedHighlight){
  const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['recap','🌙','Resumo do dia','Um destaque, a noite na vila e o amanhecer'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
  modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o tipo de vídeo. O Estúdio monta o roteiro com os dados atuais da vila.</p>
@@ -3684,7 +3857,8 @@ function openRecMenu(){
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
  $('mX').onclick=closeModal;
  const recapHighlights=dayRecapHighlights();
- let recapHighlight=recapHighlights[0]||null;
+ let recapHighlight=selectedHighlight===undefined||selectedHighlight instanceof Event?recapHighlights[0]||null:
+  recapHighlights.find(item=>item.d===selectedHighlight?.d&&item.t===selectedHighlight?.t&&item.x===selectedHighlight?.x&&item.y===selectedHighlight?.y)||null;
  const f=$('stFormat'),camSel=$('stCamera');f.value=STUDIO.format;camSel.value=STUDIO.camera;
  for(const [key,id] of [['captions','stCaptions'],['music','stMusic'],['hud','stHud']]){$(id).checked=STUDIO[key];$(id).onchange=e=>{STUDIO[key]=e.target.checked;update()}}
  f.onchange=()=>{STUDIO.format=f.value;if(STUDIO.mode==='welcome')saveWelcomeDraft();update()};camSel.onchange=()=>{STUDIO.camera=camSel.value;update()};
@@ -3748,12 +3922,12 @@ function openRecMenu(){
  }
  if(STUDIO.mode==='vote'){extra=`<div class="bgrp">🗳️ Votação da próxima construção</div><p class="tip">Selecione três obras do catálogo. O vídeo conta a história da vila antes de mostrar os três cards de votação.</p>${[0,1,2].map(i=>`<label for="stVote${i}">Opção ${i+1}</label><select class="in" id="stVote${i}">${VOTE_BUILDINGS.map(([key,b])=>`<option value="${key}">${b.icon} ${esc(b.label)}</option>`).join('')}</select>`).join('')}<label>Duração do Short</label><select class="in" id="stVoteSeconds"><option value="20">20 segundos</option><option value="30">30 segundos</option></select><p class="tip">O vídeo não contabiliza votos automaticamente. Confira os comentários do YouTube e construa a mais votada no jogo.</p>`;}
  if(STUDIO.mode==='resident'){extra='<label for="stResidentSearch">Buscar morador</label><input class="in" type="search" id="stResidentSearch" placeholder="Digite parte do nome"><label for="stResident">Morador em destaque</label><select class="in" id="stResident"></select>'}
- const narration=STUDIO.mode==='vote'?VOTE_NARRATION:STUDIO.mode==='event'?EVENT_NARRATION:null;
- if(narration)extra+=`<div class="row"><button type="button" class="btn" id="stNarration">Narração com ElevenLabs</button>
+ const narration=studioNarration(STUDIO.mode);
+ extra+=`<div class="row"><button type="button" class="btn" id="stNarration">Narração com ElevenLabs</button>
   <label><input type="checkbox" id="stVoiceEnabled" ${narration.enabled?'checked':''}> Incluir voz no vídeo</label></div>`;
  $('stExtra').innerHTML=extra;
  if($('stNarration')){
-  $('stNarration').onclick=openStudioNarration;
+  $('stNarration').onclick=()=>openStudioNarration(recapHighlight);
   $('stVoiceEnabled').onchange=e=>{narration.enabled=e.target.checked};
  }
  if(episodeMode){
@@ -3796,6 +3970,10 @@ function openRecMenu(){
    replay.type='button';replay.className='btn';replay.textContent='Regravar última chegada';
    replay.onclick=()=>welcomeStartBatch(LAST_WELCOME);
    $('stWelcomeCount').after(replay);
+   const replayVoice=document.createElement('button');
+   replayVoice.type='button';replayVoice.className='btn';replayVoice.textContent='Narração da última chegada';
+   replayVoice.onclick=()=>openStudioNarration(undefined,LAST_WELCOME);
+   replay.after(replayVoice);
   }
  }
  if($('stVoteSeconds')){$('stVoteSeconds').value=String(STUDIO.voteSeconds);$('stVoteSeconds').onchange=()=>STUDIO.voteSeconds=Number($('stVoteSeconds').value);for(let i=0;i<3;i++){const field=$('stVote'+i);field.value=STUDIO.voteOptions[i];field.onchange=()=>STUDIO.voteOptions[i]=field.value;}}
@@ -3836,11 +4014,21 @@ function openRecMenu(){
   }catch(e){alert(e.message);return}
  }
  if(mode==='welcome'){welcomeStartBatch();return;}else ARRIVALS.active=false;
+ const voice=mode==='event'?null:studioPreparedVoice(mode,studioVoiceScript(mode));
+ if(voice===false)return;
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  if(mode==='event'){
   if(eventPlan?.voice)STUDIO.captions=true;
   startRecEvent(STUDIO.event,eventPlan);
- }else{startRec(mode==='episode'&&STUDIO.camera==='auto');if(REC&&resident)focusStudioResident(resident)}
+ }else{
+  startRec(mode==='episode'&&STUDIO.camera==='auto',STUDIO.format,!!voice);
+  if(REC&&resident)focusStudioResident(resident);
+  if(REC&&voice){
+   STUDIO.captions=true;
+   if(REC.auto&&TOUR)attachTourVoice(voice,voice.script.main);
+   else{REC.voice=voice;voice.main=voiceSection(voice,voice.script.main,mode==='resident'?30:24)}
+  }
+ }
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;}
  };
  $('stPreview').onclick=()=>{

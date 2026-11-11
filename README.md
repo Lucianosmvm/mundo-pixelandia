@@ -6,7 +6,9 @@ Abra `index.html` em navegador moderno. Para usar PWA, hospede por HTTPS.
 
 ## Narração no Estúdio
 
-Em **Estúdio → Escolha a próxima obra** ou **Evento especial**, abra **Narração com ElevenLabs** para gerar a voz dos cards com o Eleven v4 em português. Selecione **Usar no vídeo**. Na votação, abra **Prévia** para conferir o áudio com as legendas. Nos eventos, **Ver roteiro** permite ouvir cada card. O Estúdio inclui a voz no arquivo gravado, mesmo com a música desligada. O áudio gerado fica disponível até recarregar a página.
+Escolha qualquer tipo de vídeo no **Estúdio**, abra **Narração com ElevenLabs**, clique em **Gerar narração** e selecione **Usar no vídeo**. O Estúdio monta o roteiro e sincroniza a voz com os cards, mesmo com a música desligada. Em **Boas-vindas**, o roteiro acompanha as chegadas, mostra como ficou a vila e inclui as obras da votação quando selecionadas. No modo expresso, os nomes são narrados em grupos de até cinco.
+
+Na votação, abra **Prévia** para conferir o áudio com as legendas. Nos eventos, **Ver roteiro** permite ouvir cada card. O áudio gerado fica disponível até recarregar a página. Se mudar o roteiro, gere a narração novamente.
 
 Para conectar o Estúdio ao ElevenLabs, publique [`narration-worker.mjs`](narration-worker.mjs) como um Cloudflare Worker. No painel do Worker, configure estas variáveis em **Settings → Variables and Secrets**:
 
