@@ -1761,13 +1761,13 @@ function updateAmbient(dt){
 let last=performance.now(),uiAcc=0,saveAcc=0;
 function frame(now){
   const dt=Math.min(0.05,Math.max(0,(now-last)/1000));last=now;gtime+=dt;
-  cameraScriptTick(now);
   const steps=timeScale,sub=dt;
   audioTick(dt);
   for(let k=0;k<steps;k++){updateEvents(sub);updateVehicles(sub);worldTick(sub);for(const n of npcs)if(n.active&&!(REC&&REC.arrivalId&&ARRIVALS.active&&ARRIVALS.ids.includes(n.id)&&ARRIVALS.ids.indexOf(n.id)>=ARRIVALS.index)&&!(ARRIVAL_PREVIEW&&ARRIVAL_PREVIEW.id===n.id))updateNPC(n,sub)}
   updateAmbient(dt);
   arrivalSceneTick(now,dt);
   tourTick(dt);
+  cameraScriptTick(now);
   if(!(REC&&REC.arrivalScene)&&!TOUR&&follow!=null){const n=npcs.find(m=>m.id===follow);if(n&&n.active){cam.x+=(n.x-cam.x)*Math.min(1,dt*4);cam.y+=(n.y-cam.y)*Math.min(1,dt*4)}else if(!n)follow=null}
   if(follow!=null&&followUntil&&now>followUntil&&!pinnedFollow){follow=null;followUntil=0}
   clampCam();render();recFrame(now);
@@ -2852,12 +2852,12 @@ function studioScriptRead(mode){
 function studioScriptAttach(scenes,mode){
  if(!REC||!scenes)return;
  const sections=scenes.map(x=>{const c=cameraScriptExtract(x.lines);return {cmd:x.cmd,lines:c.lines,cues:c.cues,duration:Math.max(5,Math.ceil(c.lines.join(' ').length/12)+2)+c.extra}});
- REC.cameraTimeline=cameraScriptTimeline(sections,0);
  const key=mode==='vote'?'VOTACAO':'EVENTO';
  const main=sections.find(x=>x.cmd===key);
  const mainMin=mode==='vote'?STUDIO.voteSeconds:({rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[STUDIO.event]||60);
  main.duration=Math.max(main.duration,mainMin);
  let t=0;for(const section of sections){section.start=t;t+=section.duration}
+ REC.cameraTimeline=cameraScriptTimeline(sections,0);
  REC.customStudio={mode,sections,duration:t,mainStart:main.start,mainDuration:main.duration};
  if(mode==='vote'){REC.vote.seconds=t;REC.vote.start=main.start;REC.vote.visualSeconds=main.duration}
  if(mode==='event'){REC.ev.t0=REC.start+main.start*1000;REC.ev.scripted=true}
