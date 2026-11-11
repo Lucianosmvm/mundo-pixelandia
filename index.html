@@ -201,7 +201,7 @@ const G_GRASS=0,G_PATH=1,G_WATER=2,G_SAND=3,G_SOIL=4,G_SEA=5,G_RAIL=6;
 const isWaterG=g=>g===G_WATER||g===G_SEA;
 const O_TREE=1,O_ROCK=2,O_LAMP=3,O_FLOWER=4,O_FIRE=5,O_CRATE=6;
 const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
-const SPEED=30, DAYSEC=300, SAVE_KEY='vilaInscritos_v1';
+const SPEED=48, DAYSEC=300, SAVE_KEY='vilaInscritos_v1';
 const QUARRIES=[[CX+1,CY-18],[CX-55,CY-12],[CX+56,CY+28],[CX+22,CY+46],[CX-30,CY-45]];
 const idx=(x,y)=>y*W+x, inB=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
@@ -726,12 +726,20 @@ function updateNPC(n,dt){
   if(s.t==='go'){
     if(!s.path){s.path=findPath(n,s.goal,15000);if(!s.path){abort(n);return}}
     if(!s.path.length){if(s.face)faceTo(n,s.face[0],s.face[1]);n.step=null;return}
-    const k=s.path[0],kx=k%W,ky=(k/W)|0;
-    if(!walkable(kx,ky)){s.path=null;s.tries=(s.tries||0)+1;if(s.tries>3)abort(n);return}
-    const tx=kx*T+8,ty=ky*T+12,dx=tx-n.x,dy=ty-n.y,d=Math.hypot(dx,dy),sp=SPEED*dt;
-    if(d<=sp){n.x=tx;n.y=ty;s.path.shift()}else{n.x+=dx/d*sp;n.y+=dy/d*sp}
-    if(Math.abs(dx)>Math.abs(dy))n.dir=dx>0?'right':'left';else if(d>0.01)n.dir=dy>0?'down':'up';
-    n.moving=true;n.walkT+=dt;
+    let remaining=SPEED*dt,travelled=0;
+    // Percorre vários nós no mesmo quadro, sem frear a cada ladrilho.
+    while(remaining>0.001&&s.path.length){
+      const k=s.path[0],kx=k%W,ky=(k/W)|0;
+      if(!walkable(kx,ky)){s.path=null;s.tries=(s.tries||0)+1;if(s.tries>3)abort(n);return}
+      const tx=kx*T+8,ty=ky*T+12,dx=tx-n.x,dy=ty-n.y,d=Math.hypot(dx,dy);
+      if(d<0.001){s.path.shift();continue}
+      const step=Math.min(remaining,d);
+      n.x+=dx/d*step;n.y+=dy/d*step;travelled+=step;remaining-=step;
+      if(Math.abs(dx)>Math.abs(dy))n.dir=dx>0?'right':'left';else n.dir=dy>0?'down':'up';
+      if(step>=d-0.001){n.x=tx;n.y=ty;s.path.shift()}
+    }
+    n.moving=travelled>0;
+    n.walkT+=travelled/8;
   }else if(s.t==='work'){
     if(!s.init){s.init=true;if(s.face){faceTo(n,s.face[0],s.face[1]);n.faceT=s.face}else n.faceT=null}
     n.anim=s.anim;n.animT+=dt;s.dur-=dt*workSpeed();workFx(n,s,dt);
@@ -1539,7 +1547,7 @@ function drawNPC(n){
   if(n.sleeping){ctx.translate(0,-2);ctx.rotate(-Math.PI/2)}
   const dir=n.sleeping?'down':n.dir,side=dir==='left'||dir==='right';
   if(dir==='left')ctx.scale(-1,1);
-  const ph=n.moving?Math.floor(n.walkT*8)%4:0,l1=ph===1?-1:0,l2=ph===3?-1:0;let bob=(ph===1||ph===3)?-1:0;if(n.anim==='dance')bob=Math.sin(n.animT*12)>0?-2:0;
+  const ph=n.moving?Math.floor(n.walkT*7)%4:0,l1=ph===1?-1:0,l2=ph===3?-1:0;let bob=(ph===1||ph===3)?-1:0;if(n.anim==='dance')bob=Math.sin(n.animT*12)>0?-2:0;
   R(n.pants,-3,-4+l1,2,4);R(n.pants,1,-4+l2,2,4);R('#3a2a1e',-3,-1+l1,2,1);R('#3a2a1e',1,-1+l2,2,1);
   ctx.translate(0,bob);
   const sh=n.shirt;
@@ -1744,7 +1752,7 @@ function updateAmbient(dt){
 
 let last=performance.now(),uiAcc=0,saveAcc=0;
 function frame(now){
-  const dt=Math.min(0.1,(now-last)/1000);last=now;gtime+=dt;
+  const dt=Math.min(0.05,Math.max(0,(now-last)/1000));last=now;gtime+=dt;
   const steps=timeScale,sub=dt;
   audioTick(dt);
   for(let k=0;k<steps;k++){updateEvents(sub);updateVehicles(sub);worldTick(sub);for(const n of npcs)if(n.active&&!(REC&&REC.arrivalId===n.id)&&!(ARRIVAL_PREVIEW&&ARRIVAL_PREVIEW.id===n.id))updateNPC(n,sub)}
@@ -2292,12 +2300,17 @@ function arrivalSceneTick(now,dt){
     if(Math.abs(dx)>Math.abs(dy))n.dir=dx>0?'right':'left';
     else if(Math.abs(dy)>0)n.dir=dy>0?'down':'up';
   }
-  n.moving=walk>0&&walk<1;n.walkT+=dt*3.5;
+  n.moving=walk>0&&walk<1;
+  // Animação dos passos sincronizada ao deslocamento real do personagem.
+  const moved=Math.hypot(n.x-(sc.lastX??n.x),n.y-(sc.lastY??n.y));
+  n.walkT+=Math.min(moved,16)/8;
+  sc.lastX=n.x;sc.lastY=n.y;
   if(walk>=1&&!sc.celebrated){sc.celebrated=true;n.moving=false;n.dir='down';sfx('fanfare');confetti(n.x,n.y-14);floatTxt(n.x,n.y-28,'Bem-vindo(a)!')}
   // Mantém o personagem centralizado, sem legendas sobre ele.
-  cam.x+=(n.x-cam.x)*Math.min(1,dt*7);
-  cam.y+=(n.y-15-cam.y)*Math.min(1,dt*7);
-  cam.z+=((isMobile()?3.7:4.2)-cam.z)*Math.min(1,dt*4);
+  const cameraEase=1-Math.exp(-6*dt);
+  cam.x+=(n.x-cam.x)*cameraEase;
+  cam.y+=(n.y-15-cam.y)*cameraEase;
+  cam.z+=((isMobile()?3.7:4.2)-cam.z)*(1-Math.exp(-4*dt));
 }
 // Cartão pequeno no canto: aparece brevemente, sai e libera toda a cena.
 function drawArrivalTag(g,W2,H2,s,n,age){
