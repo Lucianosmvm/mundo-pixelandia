@@ -2263,6 +2263,8 @@ function rr(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);
 // Área segura dos Shorts: topo ~10% (ícones), base ~22% (título/descrição), lateral direita ~18% (botões)
 function drawVideoCard(g,w,h,{title,sub='',label='',kind='message',at=.78,alpha=1}){
   const vertical=h>w,s=Math.min(w/720,h/660),featured=kind==='invite';
+  // Shorts: margem direita para ações do YouTube e faixa inferior livre para título/descrição.
+  if(vertical){at=Math.min(at,.68);if(kind==='story')at=.60;}
   const bw=Math.min(w*(vertical ? .77 : .80),(featured?665:760)*s);
   const x=w*(vertical ? .45 : .5)-bw/2,pad=28*s,maxW=bw-2*pad;
   g.save();
@@ -3117,12 +3119,12 @@ function drawVoteOverlay(g,w,h,age,vote){
   return;
  }
  const alpha=clamp((age-vote.ballotAt)/.35,0,1);
- drawVideoCard(g,w,h,{title:'Qual obra vamos construir?',at:.20,alpha});
+ drawVideoCard(g,w,h,{title:'Qual obra vamos construir?',at:h>w?.17:.20,alpha});
  vote.options.forEach((key,i)=>{
   const {icon,label}=BT[key];
-  drawVideoCard(g,w,h,{title:`${i+1} · ${icon} ${label}`,at:.36+i*.14,alpha});
+  drawVideoCard(g,w,h,{title:`${i+1} · ${icon} ${label}`,at:h>w?.30+i*.115:.36+i*.14,alpha});
  });
- drawVideoCard(g,w,h,{title:'Vote nos comentários',sub:'Comente 1, 2 ou 3.',kind:'invite',at:.81,alpha});
+ drawVideoCard(g,w,h,{title:'Vote nos comentários',sub:'Comente 1, 2 ou 3.',kind:'invite',at:h>w?.69:.81,alpha});
 }
 function startVoteRecording(vote){
  ARRIVALS.active=false;
