@@ -4079,7 +4079,25 @@ addEventListener('beforeunload',persist);document.addEventListener('visibilitych
 
 <script>
 // Atualização PWA: o navegador mantém o aplicativo instalado entre versões.
-if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./service-worker.js',{scope:'./'}).then(reg=>{reg.update().catch(()=>{});}).catch(err=>console.warn('PWA:',err));});}
+if('serviceWorker' in navigator){
+ let refreshing=false;
+ navigator.serviceWorker.addEventListener('controllerchange',()=>{
+  if(!refreshing){refreshing=true;window.location.reload()}
+ });
+ window.addEventListener('load',()=>{
+  navigator.serviceWorker.register('./service-worker.js',{scope:'./',updateViaCache:'none'})
+   .then(reg=>{
+    reg.update().catch(()=>{});
+    if(reg.waiting)reg.waiting.postMessage({type:'SKIP_WAITING'});
+    reg.addEventListener('updatefound',()=>{
+     const worker=reg.installing;
+     worker?.addEventListener('statechange',()=>{
+      if(worker.state==='installed'&&navigator.serviceWorker.controller)worker.postMessage({type:'SKIP_WAITING'});
+     });
+    });
+   }).catch(err=>console.warn('PWA:',err));
+ });
+}
 </script>
 </body>
 </html>
