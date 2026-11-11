@@ -2355,10 +2355,17 @@ function drawShortsCTA(g,W2,H2,s,age,duration){
   const a=clamp((age-(duration-2.7))/.4,0,1),pad=18*s;
   g.save();g.globalAlpha=a;g.textAlign='center';g.textBaseline='middle';
   const msg='Quer morar aqui? Comente nome e profissão!';
-  const w=Math.min(W2*.83,610*s),x=(W2-w)/2,y=H2*.72;
-  g.fillStyle='rgba(41,64,27,.92)';rr(g,x,y,w,80*s,12*s);g.fill();
-  g.fillStyle='#fff4ce';g.font=`700 ${24*s}px "Pixelify Sans",sans-serif`;
-  g.fillText(msg,W2/2,y+40*s,w-2*pad);g.restore();
+  const w=Math.min(W2*.84,610*s),x=(W2-w)/2,h=112*s,y=H2*.70;
+  // Card de pergaminho no estilo dos painéis do Mundo Pixelândia.
+  g.shadowColor='rgba(0,0,0,.38)';g.shadowBlur=12*s;g.shadowOffsetY=6*s;
+  g.fillStyle='#5e2f10';rr(g,x-5*s,y-5*s,w+10*s,h+10*s,15*s);g.fill();
+  g.shadowColor='transparent';g.shadowBlur=0;g.shadowOffsetY=0;
+  g.fillStyle='#f7e2b5';rr(g,x,y,w,h,11*s);g.fill();
+  g.strokeStyle='#c99a5b';g.lineWidth=3*s;rr(g,x+7*s,y+7*s,w-14*s,h-14*s,8*s);g.stroke();
+  g.fillStyle='#3b2412';g.font=`700 ${29*s}px "Pixelify Sans",sans-serif`;
+  g.fillText('🏡 Quer morar aqui?',W2/2,y+37*s,w-2*pad);
+  g.fillStyle='#8b4a1f';g.font=`700 ${25*s}px "Pixelify Sans",sans-serif`;
+  g.fillText('Comente NOME + PROFISSÃO!',W2/2,y+78*s,w-2*pad);g.restore();
 }
 function shortsSceneFor(n,start,seconds){
   const route=arrivalRoadRoute(n.x,n.y),dist=[0];
