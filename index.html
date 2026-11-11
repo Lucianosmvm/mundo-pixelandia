@@ -3935,11 +3935,31 @@ $('bulkBtn').onclick=()=>{
 };
 $('resetBtn').onclick=()=>{modal(`<h3>🔄 Criar um novo mundo?</h3><p>Todos os moradores e construções serão apagados. Isso não pode ser desfeito.</p><div class="row"><button class="btn red" id="mYes">Sim, recomeçar</button><button class="btn" id="mNo">Cancelar</button></div>`);
   $('mYes').onclick=()=>{newWorld();save();refreshPanel(true);closeModal();logEv('🌲 Um novo mundo nasceu')};$('mNo').onclick=closeModal};
-$('backupBtn').onclick=()=>{modal(`<h3>💾 Backup da vila</h3><p style="font-size:14px">A vila é salva automaticamente neste navegador. Para garantir, copie o código abaixo e guarde. Para restaurar, cole um código e clique em Importar.</p><textarea id="bk"></textarea><div class="row" style="margin-top:8px"><button class="btn" id="bCopy">📋 Copiar</button><button class="btn" id="bImp">📥 Importar</button><button class="btn" id="bClose">Fechar</button></div><p id="bMsg" style="font-size:13px"></p>`);
-  $('bk').value=btoa(unescape(encodeURIComponent(serialize())));
-  $('bCopy').onclick=async()=>{try{await navigator.clipboard.writeText($('bk').value);$('bMsg').textContent='✅ Copiado!'}catch(e){$('bk').select();$('bMsg').textContent='Selecionei o texto: use Ctrl+C.'}};
-  $('bImp').onclick=()=>{try{load(JSON.parse(decodeURIComponent(escape(atob($('bk').value.trim())))));tlReset();save();refreshPanel(true);closeModal();logEv('📥 Vila restaurada!')}catch(e){$('bMsg').textContent='❌ Código inválido.'}};
-  $('bClose').onclick=closeModal};
+$('backupBtn').onclick=()=>{
+ modal(`<h3>💾 Backup da vila (JSON)</h3><p style="font-size:14px">Exporte sua vila para um arquivo .json e guarde em local seguro. Para restaurar, selecione um arquivo JSON de backup.</p><div class="row" style="margin-top:8px"><button class="btn" id="bExport">📤 Baixar JSON</button><button class="btn" id="bImport">📥 Importar JSON</button><button class="btn" id="bClose">Fechar</button></div><input id="bFile" type="file" accept=".json,application/json" style="display:none"><p id="bMsg" style="font-size:13px"></p>`);
+ $('bExport').onclick=()=>{
+  try{
+   const blob=new Blob([JSON.stringify(JSON.parse(serialize()),null,2)],{type:'application/json'});
+   const url=URL.createObjectURL(blob),link=document.createElement('a');
+   link.href=url;link.download='pixelandia-backup-'+new Date().toISOString().slice(0,10)+'.json';
+   document.body.appendChild(link);link.click();link.remove();
+   setTimeout(()=>URL.revokeObjectURL(url),60000);
+   $('bMsg').textContent='✅ Backup JSON preparado para download.';
+  }catch(e){$('bMsg').textContent='❌ Não foi possível exportar o backup.'}
+ };
+ $('bImport').onclick=()=>$('bFile').click();
+ $('bFile').onchange=async()=>{
+  const file=$('bFile').files?.[0];if(!file)return;
+  try{
+   if(file.size>5*1024*1024)throw Error('Arquivo muito grande.');
+   const data=JSON.parse(await file.text());
+   if(!data||typeof data!=='object'||Array.isArray(data))throw Error('JSON inválido.');
+   if(!confirm('Restaurar este backup? A vila atual será substituída.'))return;
+   load(data);tlReset();save();refreshPanel(true);closeModal();logEv('📥 Vila restaurada do JSON!');
+  }catch(e){$('bMsg').textContent='❌ Não foi possível importar: '+e.message}
+ };
+ $('bClose').onclick=closeModal;
+};
 
 // ponteiro
 const ptrs=new Map();let moved=0,pinch=0;
