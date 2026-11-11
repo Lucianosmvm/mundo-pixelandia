@@ -3299,7 +3299,7 @@ function load(s){
   if(s.v===2&&!s.sea)addSea(mulberry32(seed+99));else if(s.coast)COAST=s.coast;
   computePoints();TRAINS.clear();PLANES.clear();SHIPS=[];
   DIST=s.dist||{};
-  restoreNPCs();for(const n of npcs)queueProfBuilding(n.prof);particles=[];reserved.clear();follow=null;npcVer++;DUCKS=[];WILD=[];FLYERS=[];
+  restoreNPCs();/* Respeita a fila salva: obras removidas pelo jogador não devem ser recriadas ao abrir. */particles=[];reserved.clear();follow=null;npcVer++;DUCKS=[];WILD=[];FLYERS=[];
   SEASON=SEASONS[s.season]?s.season:'verao';if(TREESETS)treeImgs=TREESETS[SEASON];document.querySelectorAll('[data-season]').forEach(x=>x.classList.toggle('on',x.dataset.season===SEASON));
   redrawAllGround();recount();assignHomes();if(!s.goalIdx){goalIdx=0;checkGoals(true)}
   DIST=s.dist||{};DAYLOG=s.daylog||[];distTick(true);dayMode=s.dayMode||'ep';epMin=s.epMin||20;document.querySelectorAll('[data-ep]').forEach(x=>x.classList.toggle('on',+x.dataset.ep===epMin));FF=null;document.querySelectorAll('[data-day]').forEach(x=>x.classList.toggle('on',x.dataset.day===dayMode));
