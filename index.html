@@ -3548,9 +3548,10 @@ function openStudioNarration(highlight,replay=null){
  }
  const cached=texts.every(text=>narration.audio.has(text));
  modal(`<h3><span>Narração com ElevenLabs</span><button class="btn sm" id="mX">Voltar</button></h3>
- <p class="tip">Eleven v4 · voz configurada no serviço de narração</p>
- <label for="voiceService">URL do serviço de narração</label><input class="in" id="voiceService" type="url" placeholder="https://…">
- <label for="voiceToken">Código de acesso ao serviço</label><input class="in" id="voiceToken" type="password" autocomplete="off">
+ <p class="tip">A chave da API ElevenLabs, a voz e o modelo ficam configurados no servidor de narração. O GitHub Pages não pode guardar sua chave com segurança.</p>
+ <label for="voiceService">Endereço HTTPS do servidor de narração (não é uma página HTML)</label><input class="in" id="voiceService" type="url" placeholder="https://seu-servico.exemplo/api/narrar">
+ <label for="voiceToken">Código de acesso ao seu servidor (não é a chave da ElevenLabs)</label><input class="in" id="voiceToken" type="password" autocomplete="off">
+ <p class="tip">Para escolher voz e modelo diretamente aqui, será preciso conectar um servidor que aceite essas opções. Nunca cole sua chave secreta da ElevenLabs neste formulário.</p>
  <details><summary>Texto dos cards</summary><ol>${texts.map(text=>'<li>'+esc(text)+'</li>').join('')}</ol></details>
  <div class="row"><button class="btn" id="voiceGenerate">Gerar narração</button><button class="btn" id="voiceUse" ${cached?'':'disabled'}>Usar no vídeo</button></div>
  <p id="voiceStatus" class="tip" aria-live="polite">${cached?'Narração pronta.':''}</p>`);
