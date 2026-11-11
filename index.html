@@ -2791,8 +2791,13 @@ function welcomeGroupTick(now){
    if(t>=1){n.moving=false;n.dir='down'}
    n.arrivalJump=age>=G.celebrate&&age<G.celebrate+1.2?Math.max(0,Math.sin((age-G.celebrate)*Math.PI/1.2))*9:0;
   }
-  cam.x+=(cx-cam.x)*.045;cam.y+=(cy-cam.y)*.045;
-  cam.z+=((G.express?1.85:Math.max(1.55,2.8-Math.min(1,G.members.length/12)))-cam.z)*.045;
+  let focusX=cx,focusY=cy,zoom=G.express?1.85:Math.max(1.55,2.8-Math.min(1,G.members.length/12));
+  if(!G.express&&age>=walkEnd&&age<G.celebrate){
+   const idx=Math.min(G.members.length-1,Math.floor((age-walkEnd)/2)),m=G.members[idx];
+   if(m){focusX=m.tx;focusY=m.ty;zoom=3.3}
+  }
+  cam.x+=(focusX-cam.x)*.045;cam.y+=(focusY-cam.y)*.045;
+  cam.z+=(zoom-cam.z)*.045;
   clampCam();
  }
  if(age>=G.end&&!R.stopping){
