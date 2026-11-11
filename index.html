@@ -57,7 +57,6 @@ input,select,button,textarea{font-family:inherit}
 .more{font-size:12px;opacity:.7;padding:2px 4px}
 .ctr{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .ctr .lbl{font-size:13px;font-weight:600;width:100%;margin-top:4px}
-#showBtn{position:fixed;right:12px;top:12px;z-index:6;display:none;font-size:20px}
 #camBtn{position:fixed;right:12px;top:64px;z-index:6;display:none;font-size:20px}
 #recBtn{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9;display:none;font-size:18px;padding:10px 18px}
 .rec-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#e74c3c;margin-right:6px}
@@ -104,14 +103,12 @@ input,select,button,textarea{font-family:inherit}
   #panel{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:48vh}
   #hud{left:8px;top:8px;padding:6px 8px;max-width:calc(100vw - 16px)}#hud .top{font-size:15px}#res{font-size:13px}
   .ann{font-size:21px;padding:10px 16px;white-space:normal}.ann small{font-size:15px}
-  #showBtn{top:auto;bottom:12px}
   #camBtn{top:auto;bottom:64px}
   #log{bottom:auto;top:110px}
   body.capture #log{top:auto;bottom:12px;max-width:calc(100vw - 150px)}
   .ev{font-size:13px}
   #announce{top:24%;width:92vw}
   .ann{font-size:26px}
-  #showBtn{font-size:16px;padding:6px 10px;opacity:.85}
 }
 
 /* Pixelândia 1.1 — mobile first */
@@ -121,9 +118,9 @@ input,select,button,textarea{font-family:inherit}
 #pxDrawer{position:fixed;z-index:9;left:8px;bottom:75px;width:min(350px,calc(100vw - 16px));max-height:55dvh;overflow:auto;padding:12px;background:#f7e2b5;border:3px solid #8b4a1f;border-radius:10px;box-shadow:0 4px 22px #0008;display:none;font-size:15px}
 #pxDrawer.open{display:block}#pxDrawer h3{margin:0 0 7px;font-size:19px}#pxDrawer .person{padding:6px;border-bottom:1px solid #c99a5b;display:flex;justify-content:space-between;gap:8px;align-items:center}#pxDrawer .person button{font-size:13px;padding:4px;background:#e9b768;border:1px solid #8b4a1f;border-radius:5px}#pxDrawer .meters{font-size:12px;color:#6c4528}
 #pxToast{position:fixed;top:65px;left:50%;transform:translateX(-50%);z-index:11;max-width:85vw;background:#f7e2b5;border:2px solid #8b4a1f;border-radius:9px;padding:9px 14px;display:none;text-align:center;font-size:16px;box-shadow:0 3px 15px #0007}
-body.pxCinema #hud,body.pxCinema #panel,body.pxCinema #showBtn,body.pxCinema #camBtn,body.pxCinema #log{display:none!important}
+body.pxCinema #hud,body.pxCinema #panel,body.pxCinema #camBtn,body.pxCinema #log{display:none!important}
 body.pxCinema #pxQuick{opacity:.65}body.pxCinema #pxQuick:hover{opacity:1}
-@media(max-width:700px){#panel{bottom:70px;max-height:calc(100dvh - 90px);height:auto;top:auto}#showBtn{bottom:75px;right:8px}#camBtn{top:auto;bottom:145px;right:8px}#hud{max-width:calc(100vw - 16px);padding:5px 8px}#hud .top{font-size:13px}#res{font-size:12px}#pxQuick{bottom:max(5px,env(safe-area-inset-bottom))}#log{display:none}#pxDrawer{bottom:66px}}
+@media(max-width:700px){#panel{bottom:70px;max-height:calc(100dvh - 90px);height:auto;top:auto}#camBtn{top:auto;bottom:145px;right:8px}#hud{max-width:calc(100vw - 16px);padding:5px 8px}#hud .top{font-size:13px}#res{font-size:12px}#pxQuick{bottom:max(5px,env(safe-area-inset-bottom))}#log{display:none}#pxDrawer{bottom:66px}}
 @media(orientation:landscape) and (max-height:500px){#hud{max-width:45vw}#panel{top:5px;bottom:65px;left:auto;right:5px;width:min(310px,45vw);max-height:none}#pxDrawer{max-height:calc(100dvh - 80px)}#pxQuick{left:50%}}
 
 .studio-selected{background:#bce79a!important;border-color:#3e7a25!important;box-shadow:inset 0 0 0 2px #5a9a43}.studio-grid{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))}.studio-fields{background:#fff4d6;border:2px solid #d5ac70;padding:10px;border-radius:6px}.studio-checks{display:grid;gap:5px;margin-top:10px}.studio-checks label{font-size:14px;margin:0;cursor:pointer}.studio-checks input{accent-color:#5b993a}#stStart{flex:1;min-width:170px}@media(max-width:700px){.studio-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.studio-grid .bopt{padding:7px}.studio-grid .bc{font-size:11px}}
@@ -190,7 +187,6 @@ body.pxCinema #pxQuick{opacity:.65}body.pxCinema #pxQuick:hover{opacity:1}
     <p class="tip" style="margin-top:8px">Arraste para mover · roda/pinça para zoom · clique num morador para segui-lo · tecla <b>H</b> esconde o painel (modo live).</p>
   </section>
 </div>
-<button class="btn" id="showBtn" title="Mostrar painel (H)">☰ Painel</button>
 <button class="btn" id="camBtn" title="Gravar vídeo">🎬</button>
 <button class="btn red" id="recBtn">⏹ Parar</button>
 <div id="announce"></div>
@@ -2827,7 +2823,7 @@ function startRec(auto,format=STUDIO.format){
   mr.ondataavailable=e=>{if(e.data&&e.data.size)REC&&REC.chunks.push(e.data)};
   const R0=REC;mr.onstop=()=>finishRec(R0);
   if(!$('panel').classList.contains('hidden'))togglePanel();
-  $('showBtn').style.display='block';$('camBtn').style.display='none';$('recBtn').style.display='block';
+  $('camBtn').style.display='none';$('recBtn').style.display='block';
   if(ARRIVALS.active&&STUDIO.mode==='welcome')configureWelcomeArrival(ARRIVALS.seconds);
   recFrame(performance.now());mr.start(500);
   if(auto&&!REC.arrivalId){if(STUDIO.mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}else startTour()}else startTour();if(TOUR)REC.tourDuration=TOUR.steps.reduce((sum,step)=>sum+step.dur,0)}if(STUDIO.mode==='welcome'&&!npcs.length&&!auto)startTour();
@@ -2844,7 +2840,7 @@ function configureWelcomeArrival(seconds){
 function stopRec(){if(!REC||REC.stopping)return;REC.stopping=true;$('recBtn').style.display='none';
   if(REC.dayRecap)REC.dayRecap.inviteAt=performance.now();
   // grava um pouquinho a mais: o gravador do celular perde o finalzinho do vídeo ao parar
-  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const {resident:n} of R0.groupWelcome.members){n.arrivalJump=0;n.moving=false;n.status='Novo morador';n.plan=[goNear(CX,CY,3)]}save();refreshPanel(true)}$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},(REC.dayRecap||REC.groupWelcome||REC.welcomeUpdate)?4000:REC.ext==='mp4'?3500:900)}
+  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const {resident:n} of R0.groupWelcome.members){n.arrivalJump=0;n.moving=false;n.status='Novo morador';n.plan=[goNear(CX,CY,3)]}save();refreshPanel(true)}$('recBtn').style.display='none';$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},(REC.dayRecap||REC.groupWelcome||REC.welcomeUpdate)?4000:REC.ext==='mp4'?3500:900)}
 // ===== corrige a duração do vídeo (MediaRecorder grava sem duração → YouTube mostra 0s) =====
 // mede a duração real gravada dentro do arquivo (em ms), em vez de usar o relógio
 function mp4MediaMs(buf){
@@ -3864,8 +3860,8 @@ $('fCustom').addEventListener('keydown',e=>{if(e.key==='Enter')submit()});
 document.querySelectorAll('[data-spd]').forEach(b=>b.onclick=()=>{timeScale=+b.dataset.spd;document.querySelectorAll('[data-spd]').forEach(x=>x.classList.toggle('on',x===b))});
 document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{activeMax=+b.dataset.act;document.querySelectorAll('[data-act]').forEach(x=>x.classList.toggle('on',x===b));try{localStorage.setItem(SAVE_KEY+'_act',activeMax)}catch(e){}});
 $('centerBtn').onclick=()=>{follow=null;pinnedFollow=false;centerCam()};
-function togglePanel(){const p=$('panel');p.classList.toggle('hidden');const h=p.classList.contains('hidden');$('showBtn').style.display=h?'block':'none';$('camBtn').style.display=h&&!REC?'block':'none';document.body.classList.toggle('capture',h)}
-$('hideBtn').onclick=togglePanel;$('showBtn').onclick=togglePanel;
+function togglePanel(){const p=$('panel');p.classList.toggle('hidden');const h=p.classList.contains('hidden');document.querySelector('#pxQuick [data-action="panel"]')?.setAttribute('aria-expanded',String(!h));$('camBtn').style.display=h&&!REC?'block':'none';document.body.classList.toggle('capture',h)}
+$('hideBtn').onclick=togglePanel;
 document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;if(e.key==='h'||e.key==='H')togglePanel();if(e.key==='Escape')closeModal()});
 $('villageName').oninput=e=>{villageName=e.target.value||'Vila'};
 $('villageName').onchange=save;
@@ -4022,7 +4018,7 @@ window.__vila={addNPC,get npcs(){return npcs},get res(){return res},get building
 (function(){'use strict';
 const game=window.__vila;if(!game)return;
 const $=id=>document.getElementById(id);
-const bar=document.createElement('nav');bar.id='pxQuick';bar.setAttribute('aria-label','Ações rápidas');bar.innerHTML='<button data-action="panel" title="Painel">☰</button><button data-action="people" title="Vida dos moradores">🧠</button><button data-action="family" title="Famílias">❤️</button><button data-action="events" title="Eventos">🎉</button><button data-action="cinema" title="Modo cinematográfico">🎬</button><button data-action="full" title="Tela cheia">⛶</button>';document.body.appendChild(bar);
+const bar=document.createElement('nav');bar.id='pxQuick';bar.setAttribute('aria-label','Ações rápidas');bar.innerHTML='<button data-action="panel" title="Painel" aria-label="Painel" aria-controls="panel" aria-expanded="'+!$('panel').classList.contains('hidden')+'">☰</button><button data-action="people" title="Vida dos moradores">🧠</button><button data-action="family" title="Famílias">❤️</button><button data-action="events" title="Eventos">🎉</button><button data-action="cinema" title="Modo cinematográfico">🎬</button><button data-action="full" title="Tela cheia">⛶</button>';document.body.appendChild(bar);
 const drawer=document.createElement('section');drawer.id='pxDrawer';drawer.setAttribute('aria-live','polite');document.body.appendChild(drawer);
 const toast=document.createElement('div');toast.id='pxToast';document.body.appendChild(toast);let toastTimer;
 function notice(t){toast.textContent=t;toast.style.display='block';clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.style.display='none',3400)}
@@ -4053,7 +4049,7 @@ const simDay=window.__pxDay||1;if(simDay!==lastDay){lastDay=simDay;if(simDay>las
 // Track the original in-game clock via the existing HUD, without changing its simulation loop.
 setInterval(()=>{const match=$('clock')?.textContent.match(/Dia\s+(\d+)/);if(match)window.__pxDay=Number(match[1]);socialTick()},12000);
 function cinemaToggle(){cinema=!cinema;document.body.classList.toggle('pxCinema',cinema);bar.querySelector('[data-action="cinema"]').classList.toggle('active',cinema);if(cinema){view='';drawer.classList.remove('open');if(!$('panel').classList.contains('hidden'))$('hideBtn').click();notice('🎬 Câmera automática ativada');function focus(){const active=game.npcs.filter(n=>n.active&&!n.inside);if(!active.length)return;const n=active[cycle++%active.length];game.cam.x=n.x;game.cam.y=n.y;game.cam.x+=0;game.cam.y+=0}focus();cinemaTimer=setInterval(focus,9000)}else{clearInterval(cinemaTimer);notice('🎬 Modo cinematográfico encerrado')}}
-bar.onclick=async e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action;if(a==='panel'){$('panel').classList.contains('hidden')?$('showBtn').click():$('hideBtn').click();view='';drawer.classList.remove('open')}
+bar.onclick=async e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action;if(a==='panel'){togglePanel();view='';drawer.classList.remove('open')}
 else if(['people','family','events'].includes(a))show(a);else if(a==='cinema')cinemaToggle();else if(a==='full'){try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else notice('Instale o PWA para abrir sem a barra do navegador.')}catch(e){notice('Tela cheia indisponível neste navegador.')}}};
 addEventListener('beforeunload',persist);document.addEventListener('visibilitychange',()=>{if(document.hidden)persist()});
 })();
