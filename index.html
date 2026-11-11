@@ -2225,11 +2225,17 @@ function constructionVoteStatus(result){
  return {caption:'A obra saiu da fila de construção.'};
 }
 function constructionVoteOpening(){
+ const selected=STUDIO.episodeCompletedWork;
+ const completed=selected?.seed===seed?bById.get(selected.id):null;
  const result=constructionVotes.at(-1);
- if(!result)return null;
- const {building,caption}=constructionVoteStatus(result);
+ if(!completed?.done&&!result)return null;
+ const {building,caption}=completed?.done
+  ?{building:completed,caption:'A obra já está pronta. Olha como ficou!'}
+  :constructionVoteStatus(result);
  const [x,y]=building?bPos(building):[CX*T+8,CY*T+8];
- return {x,y,z:building?2.6:2.2,dur:6,title:'Vocês escolheram '+BT[result.type].label+'!',sub:caption};
+ const type=completed?.done?completed.type:result.type;
+ const title=type==='casa'?'Vocês escolheram a casa!':'Vocês escolheram '+BT[type].label+'!';
+ return {x,y,z:building?2.6:2.2,dur:6,title,sub:caption};
 }
 function buildTour(){
   const opening=STUDIO.mode==='episode'&&STUDIO.episodeVote?constructionVoteOpening():null;
@@ -3356,10 +3362,16 @@ function openRecMenu(){
  camSel.value=recapMode?'auto':STUDIO.camera;
  $('stPreview').hidden=recapMode;
  let extra='';if(STUDIO.mode==='event'){extra='<label>Evento</label><select class="in" id="stEvent">'+EVENTS.map(([k,i,l])=>`<option value="${k}">${i} ${l}</option>`).join('')+'</select>'}
- const latestVote=STUDIO.mode==='episode'?constructionVotes.at(-1):null;
- if(latestVote){
+ const episodeMode=STUDIO.mode==='episode';
+ if(episodeMode){
+  const latestVote=constructionVotes.at(-1);
+  const finished=buildings.filter(b=>b.done).slice().reverse();
+  const options=finished.map(b=>`<option value="${b.id}">${esc(BT[b.type].icon+' '+bName(b))} · nº ${b.id}</option>`).join('');
   extra=`<label><input type="checkbox" id="stEpisodeVote" ${STUDIO.episodeVote?'checked':''}> Abrir com o resultado da votação</label>
-  <p class="tip">${esc(BT[latestVote.type].label)} · ${constructionVoteStatus(latestVote).caption} A abertura aparece com o diretor automático e as legendas ativadas.</p>`;
+  <label for="stEpisodeWork">Obra vencedora</label><select class="in" id="stEpisodeWork">
+   <option value="">${latestVote?esc('Último resultado · '+BT[latestVote.type].label):'Selecione uma obra pronta'}</option>
+   ${options}</select>
+  <p class="tip">Escolha uma obra pronta para apresentar o resultado de uma votação anterior. Use o diretor automático e ative as legendas para exibir a abertura.</p>`;
  }
  if(recapMode){
   const options=recapHighlights.map((event,i)=>`<option value="${i}">Dia ${event.d} · ${esc(event.t)}</option>`).join('');
@@ -3398,7 +3410,13 @@ function openRecMenu(){
   extra+='<div class="bgrp">📝 Roteiro personalizado</div><label><input type="checkbox" id="stScriptMode"> Usar meu roteiro</label><div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], ['+(mode==='vote'?'VOTACAO':'EVENTO')+'], [CENA: FINAL]. Use também [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3], [ZOOM: 2] e [ESPERAR: 3]. O texto é exibido em sequência, sem voz.</p><textarea class="in" id="stScriptText" rows="11" style="width:100%;box-sizing:border-box"></textarea><button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button><button type="button" class="btn sm" id="stScriptSave">💾 Salvar roteiro</button></div>';
  }
  $('stExtra').innerHTML=extra;
- if(latestVote)$('stEpisodeVote').onchange=e=>{STUDIO.episodeVote=e.target.checked};
+ if(episodeMode){
+  $('stEpisodeVote').onchange=e=>{STUDIO.episodeVote=e.target.checked};
+  const field=$('stEpisodeWork');
+  const selected=STUDIO.episodeCompletedWork;
+  if(selected?.seed===seed&&bById.get(selected.id)?.done)field.value=String(selected.id);
+  field.onchange=()=>{STUDIO.episodeCompletedWork=field.value?{seed,id:Number(field.value)}:null};
+ }
  if(recapMode){
   const field=$('stRecapHighlight');
   field.value=String(recapHighlights.indexOf(recapHighlight));
