@@ -1761,6 +1761,7 @@ function updateAmbient(dt){
 let last=performance.now(),uiAcc=0,saveAcc=0;
 function frame(now){
   const dt=Math.min(0.05,Math.max(0,(now-last)/1000));last=now;gtime+=dt;
+  cameraScriptTick(now);
   const steps=timeScale,sub=dt;
   audioTick(dt);
   for(let k=0;k<steps;k++){updateEvents(sub);updateVehicles(sub);worldTick(sub);for(const n of npcs)if(n.active&&!(REC&&REC.arrivalId&&ARRIVALS.active&&ARRIVALS.ids.includes(n.id)&&ARRIVALS.ids.indexOf(n.id)>=ARRIVALS.index)&&!(ARRIVAL_PREVIEW&&ARRIVAL_PREVIEW.id===n.id))updateNPC(n,sub)}
@@ -2452,9 +2453,17 @@ function welcomeStartBatch(){
   const intro=scenes.filter(x=>x.type==='village').flatMap(x=>x.lines);
   const outro=scenes.filter(x=>x.type==='final').flatMap(x=>x.lines);
   const entries=scenes.filter(x=>x.type==='resident');
-  REC.customWelcome={intro,outro,entries,invite:scenes.at(-1).lines,ending:Math.max(7,scriptDuration(outro,4)+4)};
-  REC.welcomeIntro=scriptDuration(intro,6);REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
-  REC.arrivalSeconds=Math.max(ARRIVALS.seconds,...entries.map(x=>scriptDuration(x.lines,12)));
+  REC.cameraTimeline=[];
+  let offset=0;
+  for(const sc of scenes.filter(x=>x.type!=='invite')){
+   const clean=cameraScriptExtract(sc.lines),dur=sc.type==='village'?scriptDuration(clean.lines,6)+clean.extra:sc.type==='resident'?Math.max(ARRIVALS.seconds,scriptDuration(clean.lines,12)+clean.extra):scriptDuration(clean.lines,4)+clean.extra;
+   for(const cue of clean.cues)if(cue.target||cue.zoom)REC.cameraTimeline.push({time:offset+Math.min(dur-1,cue.at/Math.max(1,clean.lines.length)*dur),target:cue.target||{x:cam.x,y:cam.y,z:cue.zoom}});
+   offset+=dur;
+  }
+  REC.cameraTimeline.sort((a,b)=>a.time-b.time);
+  REC.customWelcome={intro:cameraScriptExtract(intro).lines,outro:cameraScriptExtract(outro).lines,entries:entries.map(e=>({...e,lines:cameraScriptExtract(e.lines).lines})),invite:scenes.at(-1).lines,ending:Math.max(7,scriptDuration(cameraScriptExtract(outro).lines,4)+4)};
+  REC.welcomeIntro=scriptDuration(cameraScriptExtract(intro).lines,6)+cameraScriptExtract(intro).extra;REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
+  REC.arrivalSeconds=Math.max(ARRIVALS.seconds,...entries.map(x=>scriptDuration(cameraScriptExtract(x.lines).lines,12)+cameraScriptExtract(x.lines).extra));
  }
  WELCOME_QUEUE.length=0;save();
 }
@@ -2744,6 +2753,77 @@ const SCRIPT_KEY='pixelandia-welcome-script-v1';
 let WELCOME_SCRIPT='';
 try{WELCOME_SCRIPT=localStorage.getItem(SCRIPT_KEY)||''}catch(e){}
 const STUDIO_SCRIPTS={vote:'',event:''};
+function cameraScriptTarget(raw){
+ const name=raw.trim().toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+ if(name==='vila'||name==='centro'||name==='praca')return {x:CX*T+8,y:CY*T+8,z:2.2};
+ if(name.startsWith('seguir ')){
+  const who=name.slice(6).trim(),n=npcs.find(n=>n.name.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'')===who);
+  if(!n)throw Error('Morador não encontrado para câmera: '+raw);
+  return {followId:n.id,z:3};
+ }
+ if(name.startsWith('construcao ')){
+  const id=Number(name.slice(11)),b=buildings.find(b=>b.id===id&&b.done);
+  if(!b)throw Error('Construção pronta não encontrada: '+raw);
+  return {x:(b.x+b.w/2)*T,y:(b.y+b.h/2)*T,z:3};
+ }
+ const aliases={porto:'cais',cais:'cais',aeroporto:'aeroporto',hospital:'hospital'};
+ const type=aliases[name]||Object.keys(BT).find(k=>BT[k].label.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g,'')===name);
+ if(type){
+  const b=buildings.find(b=>b.done&&b.type===type);
+  if(!b)throw Error('A vila ainda não tem esta construção pronta: '+raw);
+  return {x:(b.x+b.w/2)*T,y:(b.y+b.h/2)*T,z:type==='aeroporto'?1.8:3};
+ }
+ if(name==='lago'){
+  let best=null,score=-Infinity;
+  for(let y=2;y<H-2;y++)for(let x=2;x<W-2;x++){
+   if(ground[idx(x,y)]!==G_WATER)continue;
+   let nearby=0;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++)if(ground[idx(x+dx,y+dy)]===G_WATER)nearby++;
+   const v=nearby-Math.hypot(x-CX,y-CY)*.02;
+   if(v>score){score=v;best={x:(x+.5)*T,y:(y+.5)*T,z:2.3}}
+  }
+  if(!best)throw Error('Nenhum lago foi encontrado na vila.');
+  return best;
+ }
+ throw Error('Local de câmera desconhecido: '+raw);
+}
+function cameraScriptExtract(lines){
+ const text=[],cues=[];let zoom=null;
+ for(const line of lines){
+  const m=line.match(/^\[(CAMERA|ZOOM|ESPERAR):\s*(.*?)\]$/i);
+  if(!m){text.push(line);continue}
+  const cmd=m[1].toUpperCase(),arg=m[2].trim();
+  if(cmd==='CAMERA')cues.push({at:text.length,target:cameraScriptTarget(arg)});
+  if(cmd==='ZOOM'){const z=Number(arg);if(!Number.isFinite(z)||z<.5||z>6)throw Error('ZOOM deve ser entre 0.5 e 6.');cues.push({at:text.length,zoom:z})}
+  if(cmd==='ESPERAR'){const seconds=Number(arg);if(!Number.isFinite(seconds)||seconds<0||seconds>30)throw Error('ESPERAR deve ser entre 0 e 30 segundos.');cues.push({at:text.length,wait:seconds})}
+ }
+ return {lines:text,cues,extra:cues.reduce((n,c)=>n+(c.wait||0),0)};
+}
+let CAMERA_SCRIPT=null;
+function cameraScriptTick(now){
+ if(!REC||!REC.cameraTimeline||!REC.cameraTimeline.length){CAMERA_SCRIPT=null;return}
+ const age=(now-REC.start)/1000,entries=REC.cameraTimeline;
+ let active=null;for(const e of entries){if(age>=e.time)active=e;else break}
+ if(!active)return;
+ if(CAMERA_SCRIPT!==active){CAMERA_SCRIPT=active;follow=null;pinnedFollow=false;TOUR=null}
+ const t=active.target;
+ if(t.followId){const n=npcs.find(n=>n.id===t.followId);if(n){cam.x+=(n.x-cam.x)*.065;cam.y+=(n.y-cam.y)*.065}}
+ else {cam.x+=(t.x-cam.x)*.065;cam.y+=(t.y-cam.y)*.065}
+ if(t.z)cam.z+=(t.z-cam.z)*.045;
+ clampCam();
+}
+function cameraScriptTimeline(scenes,origin){
+ const cues=[];let t=origin;
+ for(const sc of scenes){
+  const duration=sc.duration||scriptDuration(sc.lines,6),clean=cameraScriptExtract(sc.lines);
+  for(const c of clean.cues)if(c.target||c.zoom){
+   const at=t+Math.min(duration-1,c.at/Math.max(1,clean.lines.length)*duration);
+   cues.push({time:at,target:c.target||{x:cam.x,y:cam.y,z:c.zoom}});
+  }
+  t+=duration;
+ }
+ return cues.sort((a,b)=>a.time-b.time);
+}
+
 for(const k of ['vote','event'])try{STUDIO_SCRIPTS[k]=localStorage.getItem('pixelandia-script-'+k)||''}catch(e){}
 function studioScriptParse(raw,mode){
  const scenes=[];let current=null;
@@ -2752,6 +2832,7 @@ function studioScriptParse(raw,mode){
   const t=line.trim();
   if(/^\[[^\]]+\]$/.test(t)){
    const cmd=t.slice(1,-1).toUpperCase();
+   if(/^(CAMERA|ZOOM|ESPERAR):/i.test(cmd)){if(!current)throw Error('Defina uma cena antes da câmera.');current.lines.push(t);continue}
    if(!allowed.includes(cmd))throw Error('Comando não permitido: '+t);
    current={cmd,lines:[]};scenes.push(current);
   }else if(t){if(!current)throw Error('Comece com [CENA: VILA].');current.lines.push(t)}
@@ -2770,7 +2851,8 @@ function studioScriptRead(mode){
 }
 function studioScriptAttach(scenes,mode){
  if(!REC||!scenes)return;
- const sections=scenes.map(x=>({cmd:x.cmd,lines:x.lines,duration:Math.max(5,Math.ceil(x.lines.join(' ').length/12)+2)}));
+ const sections=scenes.map(x=>{const c=cameraScriptExtract(x.lines);return {cmd:x.cmd,lines:c.lines,cues:c.cues,duration:Math.max(5,Math.ceil(c.lines.join(' ').length/12)+2)+c.extra}});
+ REC.cameraTimeline=cameraScriptTimeline(sections,0);
  const key=mode==='vote'?'VOTACAO':'EVENTO';
  const main=sections.find(x=>x.cmd===key);
  const mainMin=mode==='vote'?STUDIO.voteSeconds:({rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[STUDIO.event]||60);
@@ -2792,6 +2874,7 @@ function scriptParse(raw){
  if(!scenes.length||scenes[0].type!=='village')throw Error('Comece com [CENA: VILA].');
  if(names.length!==WELCOME_QUEUE.length||new Set(names).size!==names.length)throw Error('Inclua cada morador cadastrado uma única vez.');
  if(names.some(n=>!WELCOME_QUEUE.some(d=>d.name.toLowerCase()===n)))throw Error('Confira os nomes dos moradores no roteiro.');
+ for(const sc of scenes)cameraScriptExtract(sc.lines);
  if(scenes.at(-1)?.type!=='invite'||scenes.filter(x=>x.type==='invite').length!==1)throw Error('[CONVITE] deve aparecer somente no final.');
  if(scenes.some((x,i)=>x.type==='final'&&scenes.slice(i+1).some(y=>y.type==='resident')))throw Error('[CENA: FINAL] deve vir depois dos moradores.');
  return scenes;
