@@ -2490,17 +2490,20 @@ function finishArrivalScene(R0){
 function pxStoryText(){
  const mode=REC?.studioMode||STUDIO.mode;
  const count=npcs.length,finished=buildings.filter(b=>b.done).length;
+ const houses=buildings.filter(b=>b.done&&isHouse(b.type)).length;
+ const otherBuildings=finished-houses;
+ const constructionSummary=houses+' '+(houses===1?'casa pronta':'casas prontas')+(otherBuildings?' e '+otherBuildings+' '+(otherBuildings===1?'outra construção pronta':'outras construções prontas'):'');
  const n=mode==='welcome'?npcs.find(x=>x.id===REC?.arrivalId):npcs.find(x=>x.id===Number(STUDIO.resident));
  const name=n?.name||'nosso novo amigo',job=n?profLabel(n):'uma nova profissão';
  const intro=count<=1?'Nosso mundo era quase vazio. Mas uma nova história está começando!':`Nossa vila já tem ${count} moradores, e cada dia traz uma surpresa!`;
  const base={
  welcome:[intro,`Hoje chegou ${name}!`,`Sua profissão é ${job}. Que novidade especial!`,`Olhem só: ele está chegando à nossa vila!`,`Seja bem-vindo! Quem será o próximo morador?`],
  invitation:[count?'Nossa comunidade está crescendo!':'Era uma vez um pequeno mundo ainda sem moradores...','Há caminhos para explorar e muitas histórias para viver.','Mas precisamos de pessoas para construir nosso futuro!','Cada profissão pode ajudar a transformar este lugar.','Comente seu nome e profissão para morar aqui!'],
- vote:[`Nossa vila tem ${count} moradores e ${finished} construções prontas.`,'Ainda precisamos de novos espaços para nossa comunidade!','Cada obra pode ajudar a vila, mas precisamos de profissionais para fazê-la funcionar.',`Qual será a próxima: 1, 2 ou 3? Vocês decidem!`,'Comente o número da obra que você quer construir!'],
+ vote:[`Nossa vila tem ${count} moradores, ${constructionSummary}.`,'Ainda precisamos de novos espaços para nossa comunidade!','Cada obra pode ajudar a vila, mas precisamos de profissionais para fazê-la funcionar.',`Qual será a próxima: 1, 2 ou 3? Vocês decidem!`,'Comente o número da obra que você quer construir!'],
  resident:[`Cada morador tem uma história. Hoje vamos conhecer ${name}!`,`${name} trabalha como ${job}.`,'Nossa comunidade cresce graças a pessoas como essa.','Vamos acompanhar um pouco do seu dia na vila!','Quem mais merece aparecer no próximo episódio?'],
- episode:[intro,`Já somos ${count} moradores e temos ${finished} construções concluídas.`,'A cada dia surgem novos desafios e oportunidades.','Cada profissão e cada obra faz a diferença!','O que vocês gostariam de ver no próximo capítulo?'],
+ episode:[intro,`Já somos ${count} moradores e temos ${constructionSummary}.`,'A cada dia surgem novos desafios e oportunidades.','Cada profissão e cada obra faz a diferença!','O que vocês gostariam de ver no próximo capítulo?'],
  event:[`Nem todo dia é tranquilo em nossa vila de ${count} moradores!`,'Hoje aconteceu algo que merece um episódio especial.','Vamos acompanhar o que está acontecendo pelo mapa.','Cada acontecimento vira parte da história da comunidade.','O que vocês acharam deste momento?'],
- free:[`Bem-vindos de volta à nossa vila!`,`Hoje temos ${count} moradores e ${finished} construções.`,'Vamos dar uma volta e descobrir como estão as coisas.','Há sempre algum detalhe novo para observar.','Qual lugar devemos visitar no próximo vídeo?']
+ free:[`Bem-vindos de volta à nossa vila!`,`Hoje temos ${count} moradores, ${constructionSummary}.`,'Vamos dar uma volta e descobrir como estão as coisas.','Há sempre algum detalhe novo para observar.','Qual lugar devemos visitar no próximo vídeo?']
  };
  return base[mode]||base.free;
 }
@@ -2521,7 +2524,7 @@ function pxStoryOverlay(g,w,h,age){
  if(REC.studioMode==='welcome'&&ARRIVALS.active){
   const i=ARRIVALS.index,n=npcs.find(x=>x.id===REC.arrivalId),count=ARRIVALS.ids.length;
   const intro=REC.welcomeIntro||0,local=age-((REC.arrivalStart-REC.start)/1000);
-  const before=REC.welcomeBefore??Math.max(0,npcs.length-count),homes=REC.welcomeBuildings??0;
+  const before=REC.welcomeBefore??Math.max(0,npcs.length-count),homes=REC.welcomeBuildings??0,other=REC.welcomeOtherBuildings??0;
   if(REC.customWelcome&&age<intro){
     const lines=REC.customWelcome.intro;
     msg=lines.length?lines[Math.min(lines.length-1,Math.floor(age/Math.max(1,intro)*lines.length))]:'Hoje a vila vai receber novos moradores!';
@@ -2536,7 +2539,7 @@ function pxStoryOverlay(g,w,h,age){
       ?'Até agora, nossa vila estava esperando seus primeiros habitantes...'
       :before===1?'Nossa vila começou com apenas um morador, mas já tem muita história para contar!'
       :'A vida segue agitada por aqui! Nossa vila já tinha '+before+' moradores.';
-    const structures=homes===0?'Ainda temos muito espaço para crescer e construir sonhos.':homes===1?'Já existe uma construção pronta, e muitas ideias esperando a sua vez.':'Já são '+homes+' construções prontas, mas sempre cabe mais uma aventura!';
+    const structures=homes===0?'Ainda não temos casas prontas, mas há muito espaço para crescer!':homes===1?'Já temos uma casa pronta!':'Já temos '+homes+' casas prontas!';
     const lines=[scene,structures,'E adivinhem? Hoje a estrada vai ficar movimentada!','Temos '+count+' '+(count===1?'novo morador chegando!':'novos moradores chegando!')+' Vamos conhecer cada um!'];
     msg=lines[Math.min(lines.length-1,Math.floor(age/intro*lines.length))];
   }else if(n){
@@ -2627,7 +2630,8 @@ function startRec(auto){
     REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.welcomeIntro=9;
     REC.arrivalStart=REC.start+REC.welcomeIntro*1000;REC.arrivalSeconds=ARRIVALS.seconds;
     REC.welcomeBefore=npcs.length-ARRIVALS.ids.length;
-    REC.welcomeBuildings=buildings.filter(b=>b.done).length;
+    REC.welcomeBuildings=buildings.filter(b=>b.done&&isHouse(b.type)).length;
+    REC.welcomeOtherBuildings=buildings.filter(b=>b.done&&!isHouse(b.type)).length;
     REC.arrivalCamera=STUDIO.camera==='auto';REC.hookKind='';TOUR=null;follow=null;pinnedFollow=false;
     cam.x=CX*T+8;cam.y=CY*T+8;cam.z=isMobile()?1.8:2.2;
   }
