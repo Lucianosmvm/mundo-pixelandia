@@ -1544,6 +1544,8 @@ function drawNPC(n){
   const x=Math.round(n.x),y=Math.round(n.y),P=PROF[n.prof]||{},f=n.sex==='f';
   ctx.fillStyle='rgba(0,0,0,.25)';ctx.beginPath();ctx.ellipse(x,y,5,2,0,0,7);ctx.fill();
   ctx.save();ctx.translate(x,y);
+  // Pulinho de boas-vindas: a sombra fica no chão e o sprite sobe suavemente.
+  if(n.arrivalJump>0){const progress=1-n.arrivalJump/1.15;ctx.translate(0,-Math.round(Math.sin(Math.PI*Math.max(0,Math.min(1,progress)))*11));}
   if(n.sleeping){ctx.translate(0,-2);ctx.rotate(-Math.PI/2)}
   const dir=n.sleeping?'down':n.dir,side=dir==='left'||dir==='right';
   if(dir==='left')ctx.scale(-1,1);
@@ -2303,7 +2305,9 @@ function arrivalSceneTick(now,dt){
   const moved=Math.hypot(n.x-(sc.lastX??n.x),n.y-(sc.lastY??n.y));
   n.walkT+=Math.min(moved,16)/8;
   sc.lastX=n.x;sc.lastY=n.y;
-  if(walk>=1&&!sc.celebrated){sc.celebrated=true;n.moving=false;n.dir='down';sfx('fanfare');confetti(n.x,n.y-14);floatTxt(n.x,n.y-28,'Bem-vindo(a)!')}
+  if(walk>=1&&!sc.celebrated){sc.celebrated=true;n.moving=false;n.dir='down';n.arrivalJump=1.15;sfx('fanfare');confetti(n.x,n.y-14);floatTxt(n.x,n.y-28,'Bem-vindo(a)!')}
+  // Olha para a câmera (frente) e dá um pulinho ao chegar à praça.
+  if(sc.celebrated){n.dir='down';n.moving=false;if(n.arrivalJump>0)n.arrivalJump=Math.max(0,n.arrivalJump-dt)}
   // Mantém o personagem centralizado, sem legendas sobre ele.
   const cameraEase=1-Math.exp(-6*dt);
   cam.x+=(n.x-cam.x)*cameraEase;
@@ -2404,7 +2408,7 @@ function shortsStartFromDraft(d){
 function finishArrivalScene(R0){
   if(!R0.arrivalScene)return;
   const n=npcs.find(m=>m.id===R0.arrivalScene.id);if(!n)return;
-  n.moving=false;n.plan=[goNear(CX,CY,3),fn(m=>say(m,'Olá, vila! 👋'))];
+  n.moving=false;n.arrivalJump=0;n.dir='down';n.plan=[goNear(CX,CY,3),fn(m=>say(m,'Olá, vila! 👋'))];
   n.status='Novo morador';n.dir='down';save();refreshPanel(true);
 }
 function recFrame(now){
