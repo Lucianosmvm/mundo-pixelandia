@@ -2438,6 +2438,44 @@ function finishArrivalScene(R0){
   n.moving=false;n.arrivalJump=0;n.dir='down';n.plan=[goNear(CX,CY,3),fn(m=>say(m,'Olá, vila! 👋'))];
   n.status='Novo morador';n.dir='down';save();refreshPanel(true);
 }
+
+/* Narrativa textual contextual para todos os formatos do Estúdio. */
+function pxStoryText(){
+ const mode=REC?.studioMode||STUDIO.mode;
+ const count=npcs.length,finished=buildings.filter(b=>b.done).length;
+ const n=mode==='welcome'?npcs.find(x=>x.id===REC?.arrivalId):npcs.find(x=>x.id===Number(STUDIO.resident));
+ const name=n?.name||'nosso novo amigo',job=n?profLabel(n):'uma nova profissão';
+ const intro=count<=1?'Nosso mundo era quase vazio. Mas uma nova história está começando!':`Nossa vila já tem ${count} moradores, e cada dia traz uma surpresa!`;
+ const base={
+ welcome:[intro,`Hoje chegou ${name}!`,`Sua profissão é ${job}. Que novidade especial!`,`Olhem só: ele está chegando à nossa vila!`,`Seja bem-vindo! Quem será o próximo morador?`],
+ invitation:[count?'Nossa comunidade está crescendo!':'Era uma vez um pequeno mundo ainda sem moradores...','Há caminhos para explorar e muitas histórias para viver.','Mas precisamos de pessoas para construir nosso futuro!','Cada profissão pode ajudar a transformar este lugar.','Comente seu nome e profissão para morar aqui!'],
+ vote:[`Nossa vila tem ${count} moradores e ${finished} construções prontas.`,'Ainda precisamos de novos espaços para nossa comunidade!','Cada obra pode ajudar a vila, mas precisamos de profissionais para fazê-la funcionar.',`Qual será a próxima: 1, 2 ou 3? Vocês decidem!`,'Comente o número da obra que você quer construir!'],
+ resident:[`Cada morador tem uma história. Hoje vamos conhecer ${name}!`,`${name} trabalha como ${job}.`,'Nossa comunidade cresce graças a pessoas como essa.','Vamos acompanhar um pouco do seu dia na vila!','Quem mais merece aparecer no próximo episódio?'],
+ episode:[intro,`Já somos ${count} moradores e temos ${finished} construções concluídas.`,'A cada dia surgem novos desafios e oportunidades.','Cada profissão e cada obra faz a diferença!','O que vocês gostariam de ver no próximo capítulo?'],
+ event:[`Nem todo dia é tranquilo em nossa vila de ${count} moradores!`,'Hoje aconteceu algo que merece um episódio especial.','Vamos acompanhar o que está acontecendo pelo mapa.','Cada acontecimento vira parte da história da comunidade.','O que vocês acharam deste momento?'],
+ free:[`Bem-vindos de volta à nossa vila!`,`Hoje temos ${count} moradores e ${finished} construções.`,'Vamos dar uma volta e descobrir como estão as coisas.','Há sempre algum detalhe novo para observar.','Qual lugar devemos visitar no próximo vídeo?']
+ };
+ return base[mode]||base.free;
+}
+function pxStoryOverlay(g,w,h,age){
+ if(!STUDIO.captions||!REC)return;
+ const parts=REC.story||(REC.story=pxStoryText());
+ const total=REC.arrivalSeconds||REC.vote?.seconds||REC.inviteSeconds|| (REC.studioMode==='event'?45:REC.studioMode==='resident'?60:REC.studioMode==='episode'?90:45);
+ const index=Math.min(parts.length-1,Math.floor(age/Math.max(1,total/parts.length)));
+ const msg=parts[index];if(!msg)return;
+ const scale=w/720,maxW=w*.86,fs=Math.max(17,Math.round(25*scale));
+ g.save();g.font=`700 ${fs}px "Pixelify Sans",sans-serif`;
+ const words=msg.split(' '),lines=[];let line='';
+ for(const word of words){const test=line?line+' '+word:word;if(g.measureText(test).width>maxW-38*scale&&line){lines.push(line);line=word}else line=test}
+ if(line)lines.push(line);
+ const lh=fs*1.27,boxH=lines.length*lh+28*scale,top=h*.78-boxH/2;
+ g.fillStyle='rgba(35,23,14,.88)';rr(g,(w-maxW)/2,top,maxW,boxH,12*scale);g.fill();
+ g.strokeStyle='#e9b768';g.lineWidth=2*scale;g.stroke();
+ g.fillStyle='#fff2d2';g.textAlign='center';g.textBaseline='middle';
+ lines.forEach((t,i)=>g.fillText(t,w/2,top+14*scale+lh*(i+.5),maxW-24*scale));
+ g.restore();
+}
+
 function recFrame(now){
   if(!REC)return;const rc=REC.c,g=REC.g,W2=rc.width,H2=rc.height,s=W2/720;
   const sw=cv.width,sh=cv.height,ratio=W2/H2;let cw2=sw,ch2=sw/ratio;if(ch2>sh){ch2=sh;cw2=sh*ratio}
@@ -2465,6 +2503,7 @@ function recFrame(now){
     if(age>=REC.arrivalSeconds&&!REC.stopping)stopRec();
   }
   if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
+  if(REC)pxStoryOverlay(g,W2,H2,hAge);
   // marca d'água
   if(STUDIO.captions){g.textAlign='center';g.textBaseline='middle';g.font=`700 ${28*s}px "Pixelify Sans",sans-serif`;g.lineWidth=6*s;g.strokeStyle='rgba(30,18,8,.8)';
   }
@@ -2640,7 +2679,7 @@ function openRecMenu(){
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
  <div class="bgrp">2. Configuração</div><div class="studio-fields"><label>Formato do vídeo</label><select class="in" id="stFormat"><option value="horizontal">▭ Horizontal 16:9 — YouTube</option><option value="vertical">▯ Vertical 9:16 — Shorts / Reels</option></select>
  <label>Câmera</label><select class="in" id="stCamera"><option value="auto">🎬 Diretor automático</option><option value="manual">🕹️ Manual</option><option value="fixed">📌 Fixa</option></select>
- <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 💬 Legendas, títulos e anúncios</label><label><input type="checkbox" id="stMusic"> 🔊 Áudio e efeitos no vídeo</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
+ <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 📖 História narrada em textos e legendas</label><label><input type="checkbox" id="stMusic"> 🎵 Música e efeitos no vídeo (sem voz)</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
  <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia</button></div>
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
  $('mX').onclick=closeModal;
