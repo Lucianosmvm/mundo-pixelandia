@@ -3031,6 +3031,8 @@ async function finishRec(R0){
   $('vSave').onclick=()=>doSave(blob,'');$('vSaveO').onclick=()=>doSave(orig,'-original');
 }
 const ARRIVALS={ids:[],index:0,active:false,seconds:20};
+let ARRIVAL_PREVIEW=null;
+const SHORTS_DRAFT={name:'Heitor',prof:'lenhador',custom:'',sex:'m',handle:'',pet:''};
 let WELCOME_STYLE='auto';
 let WELCOME_PREVIEW=null;
 const LIVING_INVITE_SECONDS=4;
@@ -3249,6 +3251,7 @@ function cameraScriptExtract(lines){
  }
  return {lines:text,cues,extra:cues.reduce((n,c)=>n+(c.wait||0),0)};
 }
+function scriptDuration(lines,min){return Math.max(min,lines.join(' ').length/13+2)}
 function setScriptCardTiming(section,duration,audio){
  const holds=section.lines.map(()=>0);
  for(const cue of section.cues)if(cue.wait&&holds.length)holds[Math.min(cue.at,holds.length-1)]+=cue.wait;
