@@ -152,7 +152,8 @@ body.pxCinema #pxQuick{opacity:.65}body.pxCinema #pxQuick:hover{opacity:1}
     <button class="btn big" id="addBtn">Adicionar morador</button>
     <p class="tip" id="tip"></p>
   </section>
-  <section class="card"><h3><span>🏗️ Obras</span><button class="btn vote" id="voteBtn">🗳️ Gerar obra</button></h3><div id="queueList"></div></section>
+  <section class="card"><h3><span>🏗️ Obras pendentes</span><button class="btn vote" id="voteBtn">🗳️ Gerar obra</button></h3><div id="queueList"></div></section>
+  <section class="card"><h3>🏠 Construções concluídas (<span id="finishedCount">0</span>)</h3><div id="finishedList"></div></section>
   <section class="card"><h3>🎪 Eventos & novela</h3>
     <div class="ctr">
       <button class="btn sm" id="evBtn">🎲 Evento da votação</button>
@@ -2054,6 +2055,13 @@ function refreshPanel(force){
   if(!html)html='<div class="more">Nenhuma obra pendente. Clique em 🗳️ Gerar obra!</div>';
   if(!hasProf('pedreiro')&&(queue.length||buildings.some(b=>!b.done)))html+='<div class="tip" style="margin:4px 0 0">⚠️ Sem pedreiro, ninguém constrói!</div>';
   if(ql.dataset.h!==html){ql.dataset.h=html;ql.innerHTML=html}
+  const finished=buildings.filter(b=>b.done&&BT[b.type]);
+  const houses=finished.filter(b=>isHouse(b.type)).length;
+  $('finishedCount').textContent=String(finished.length);
+  const finishedHtml=finished.length
+   ?'<div class="tip" style="margin-bottom:6px">'+houses+' casa(s) · '+(finished.length-houses)+' outra(s) construção(ões)</div>'+finished.map(b=>'<div class="q"><span class="n">'+esc(BT[b.type].icon+' '+BT[b.type].label)+'</span><span class="c">#'+b.id+'</span></div>').join('')
+   :'<div class="more">Nenhuma construção concluída.</div>';
+  const fl=$('finishedList');if(fl.dataset.h!==finishedHtml){fl.dataset.h=finishedHtml;fl.innerHTML=finishedHtml}
   $('tip').textContent=tipText();
 }
 $('queueList').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
