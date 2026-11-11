@@ -2264,6 +2264,20 @@ function welcomeUpdateShot(shots,age){
  }
  return null;
 }
+function createWelcomeUpdate(start,shots,ballot){
+ const ballotAt=shots.reduce((sum,shot)=>sum+shot.dur,0);
+ return {start,shots,ballot,ballotAt,end:ballotAt+(ballot?VOTE_BALLOT_SECONDS:0)};
+}
+function drawWelcomeUpdate(g,w,h,age,update,closing){
+ if(update.ballot&&age>=update.ballotAt){
+  drawVoteOverlay(g,w,h,age,{options:update.ballot,ballotAt:update.ballotAt});
+ }else if(closing){
+  drawLivingInvite(g,w,h);
+ }else if(STUDIO.captions){
+  const shot=welcomeUpdateShot(update.shots,age);
+  if(shot)drawWelcomeCard(g,w,h,shot.title,shot.sub,.73);
+ }
+}
 function startWelcomeUpdate(now){
  const rec=REC;
  const residents=rec.welcomeReplay.ids.map(id=>npcs.find(n=>n.id===id)).filter(Boolean);
@@ -2275,15 +2289,17 @@ function startWelcomeUpdate(now){
    n.arrivalJump=0;n.moving=false;n.status='Novo morador';n.plan=[goNear(CX,CY,3)];
   }
  }
- rec.welcomeUpdate={start:now,shots:welcomeUpdateShots(rec.welcomeReplay.result,residents)};
+ const {result,ballot}=rec.welcomeReplay;
+ rec.welcomeUpdate=createWelcomeUpdate(now,welcomeUpdateShots(result,residents),ballot);
 }
 function welcomeUpdateTick(now){
  const preview=WELCOME_PREVIEW;
  const update=preview?.welcomeUpdate||REC?.welcomeUpdate;
  if(!update||now<update.start||REC?.stopping)return;
- const shot=welcomeUpdateShot(update.shots,(now-update.start)/1000);
- if(!shot){if(!preview)stopRec();return}
- if(shot!==update.current){
+ const age=(now-update.start)/1000;
+ if(!preview&&age>=update.end){stopRec();return}
+ const shot=welcomeUpdateShot(update.shots,age);
+ if(shot&&shot!==update.current){
   update.current=shot;
   cam.x=shot.x;cam.y=shot.y;cam.z=shot.z;
  }
@@ -2555,7 +2571,7 @@ function welcomeQueueRender(){
  if($('stWelcomeCount')){
   let style=$('stWelcomeStyle')?.value||'auto';if(style==='auto')style=WELCOME_QUEUE.length>=5?'group':'individual';
   const arrival=style==='individual'?9+WELCOME_QUEUE.length*ARRIVALS.seconds:welcomeGroupTiming(WELCOME_QUEUE.length,style==='express').cta;
-  const seconds=arrival+WELCOME_VILLAGE_SECONDS+(welcomeResultShot(STUDIO.welcomeResult)?WELCOME_RESULT_SECONDS:0)+LIVING_INVITE_SECONDS;
+  const seconds=arrival+WELCOME_VILLAGE_SECONDS+(welcomeResultShot(STUDIO.welcomeResult)?WELCOME_RESULT_SECONDS:0)+(STUDIO.welcomeVote?VOTE_BALLOT_SECONDS:0)+LIVING_INVITE_SECONDS;
   $('stArrivalDuration').hidden=style!=='individual';
   $('stWelcomeScript').hidden=style!=='individual';
   $('stScriptMode').checked=style==='individual'&&WELCOME_USE_SCRIPT;
@@ -2585,6 +2601,8 @@ function welcomeStartBatch(replay=null){
   alert('Alguns moradores dessa gravação já não estão nesta vila.');return;
  }
  if(!replay&&!WELCOME_QUEUE.length){alert('Adicione pelo menos um morador à lista.');return}
+ const ballot=replay?replay.ballot:STUDIO.welcomeVote?voteReadOptions('stWelcomeVoteOption'):null;
+ if(!replay&&STUDIO.welcomeVote&&!ballot)return;
  if(!canRecord()){alert('Este navegador não permite a gravação automática.');return}
  if(scenes){
   try{for(const scene of scenes)cameraScriptExtract(scene.lines)}
@@ -2615,22 +2633,20 @@ function welcomeStartBatch(replay=null){
   follow=null;pinnedFollow=false;TOUR=null;
  }
  if(scenes){
-  const intro=scenes.filter(x=>x.type==='village').flatMap(x=>x.lines);
-  const outro=scenes.filter(x=>x.type==='final').flatMap(x=>x.lines);
-  const entries=scenes.filter(x=>x.type==='resident');
-  REC.cameraTimeline=[];
-  let offset=0;
-  for(const sc of scenes.filter(x=>x.type!=='invite')){
-   const clean=cameraScriptExtract(sc.lines),dur=sc.type==='village'?scriptDuration(clean.lines,6)+clean.extra:sc.type==='resident'?Math.max(seconds,scriptDuration(clean.lines,12)+clean.extra):scriptDuration(clean.lines,4)+clean.extra;
-   for(const cue of clean.cues)if(cue.target||cue.zoom)REC.cameraTimeline.push({time:offset+Math.min(dur-1,cue.at/Math.max(1,clean.lines.length)*dur),target:cue.target||{x:cam.x,y:cam.y,z:cue.zoom}});
-   offset+=dur;
-  }
-  REC.cameraTimeline.sort((a,b)=>a.time-b.time);
-  REC.customWelcome={intro:cameraScriptExtract(intro).lines,outro:cameraScriptExtract(outro).lines,entries:entries.map(e=>({...e,lines:cameraScriptExtract(e.lines).lines})),invite:scenes.at(-1).lines,ending:Math.max(7,scriptDuration(cameraScriptExtract(outro).lines,4)+4)};
-  REC.welcomeIntro=scriptDuration(cameraScriptExtract(intro).lines,6)+cameraScriptExtract(intro).extra;REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
-  REC.arrivalSeconds=Math.max(seconds,...entries.map(x=>scriptDuration(cameraScriptExtract(x.lines).lines,12)+cameraScriptExtract(x.lines).extra));
+  const intro=cameraScriptExtract(scenes.filter(x=>x.type==='village').flatMap(x=>x.lines));
+  const outro=cameraScriptExtract(scenes.filter(x=>x.type==='final').flatMap(x=>x.lines));
+  const entries=scenes.filter(x=>x.type==='resident').map(x=>cameraScriptExtract(x.lines));
+  REC.welcomeIntro=scriptDuration(intro.lines,6)+intro.extra;
+  REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
+  REC.arrivalSeconds=Math.max(seconds,...entries.map(entry=>scriptDuration(entry.lines,12)+entry.extra));
+  const outroSeconds=scriptDuration(outro.lines,4)+outro.extra;
+  setScriptCardTiming(intro,REC.welcomeIntro);
+  entries.forEach(entry=>setScriptCardTiming(entry,REC.arrivalSeconds));
+  setScriptCardTiming(outro,outroSeconds);
+  REC.customWelcome={intro,outro,entries,ending:outroSeconds+4};
+  REC.cameraTimeline=cameraScriptTimeline([intro,...entries,outro],0);
  }
- REC.welcomeReplay=replay||{seed,ids:[...ARRIVALS.ids],style,scenes,seconds,result:STUDIO.welcomeResult,settings:{
+ REC.welcomeReplay=replay||{seed,ids:[...ARRIVALS.ids],style,scenes,seconds,result:STUDIO.welcomeResult,ballot,settings:{
   format:STUDIO.format,camera:STUDIO.camera,captions:STUDIO.captions,music:STUDIO.music,hud:STUDIO.hud
  }};
  save();
@@ -2638,6 +2654,7 @@ function welcomeStartBatch(replay=null){
   LAST_WELCOME=REC.welcomeReplay;
   WELCOME_QUEUE.length=0;
   STUDIO.welcomeResult='';
+  STUDIO.welcomeVote=false;
   saveWelcomeDraft();
  }
 }
@@ -2688,10 +2705,9 @@ function pxStoryOverlay(g,w,h,age){
  if(REC.arrivalId&&ARRIVALS.active&&ARRIVALS.index===ARRIVALS.ids.length-1&&(performance.now()-REC.arrivalStart)/1000>=REC.arrivalSeconds+(REC.customWelcome?REC.customWelcome.ending-4:0))return;
  if(REC.customStudio){
   const sections=REC.customStudio.sections,section=sections.find(x=>age>=x.start&&age<x.start+x.duration)||sections.at(-1);
-  const lines=section.lines;
-  if(!lines.length)return;
-  const elapsed=Math.max(0,age-section.start),msg=lines[Math.min(lines.length-1,Math.floor(elapsed/section.duration*lines.length))];
-  pxDrawStoryText(g,w,h,msg);return;
+  const msg=scriptCardAt(section,age-section.start);
+  if(msg)pxDrawStoryText(g,w,h,msg);
+  return;
  }
  const parts=REC.story||(REC.story=pxStoryText());
  const total=REC.arrivalSeconds||REC.vote?.seconds||REC.inviteSeconds|| (REC.studioMode==='event'?45:REC.studioMode==='resident'?60:REC.studioMode==='episode'?90:45);
@@ -2702,14 +2718,11 @@ function pxStoryOverlay(g,w,h,age){
   const intro=REC.welcomeIntro||0,local=age-((REC.arrivalStart-REC.start)/1000);
   const before=REC.welcomeBefore??Math.max(0,npcs.length-count),homes=REC.welcomeBuildings??0,other=REC.welcomeOtherBuildings??0;
   if(REC.customWelcome&&age<intro){
-    const lines=REC.customWelcome.intro;
-    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(age/Math.max(1,intro)*lines.length))]:'Hoje a vila vai receber novos moradores!';
+    msg=scriptCardAt(REC.customWelcome.intro,age)||'Hoje a vila vai receber novos moradores!';
   }else if(REC.customWelcome&&local>=REC.arrivalSeconds&&i===count-1){
-    const lines=REC.customWelcome.outro,endAge=local-REC.arrivalSeconds;
-    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(endAge/Math.max(1,REC.customWelcome.ending-4)*lines.length))]:'';
+    msg=scriptCardAt(REC.customWelcome.outro,local-REC.arrivalSeconds)||'';
   }else if(REC.customWelcome&&n&&age>=intro){
-    const lines=REC.customWelcome.entries[i].lines;
-    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(Math.max(0,local)/Math.max(1,REC.arrivalSeconds)*lines.length))]:'Chegou '+n.name+'!';
+    msg=scriptCardAt(REC.customWelcome.entries[i],local)||'Chegou '+n.name+'!';
   }else if(age<intro){
     const scene=before===0
       ?'Até agora, nossa vila estava esperando seus primeiros habitantes...'
@@ -2745,9 +2758,10 @@ function recFrame(now){
   }
   const hAge=(now-REC.start)/1000;
   if(REC.welcomeUpdate){
-    const shot=REC.welcomeUpdate.current;
-    if(REC.stopping)drawLivingInvite(g,W2,H2);
-    else if(shot&&STUDIO.captions)drawWelcomeCard(g,W2,H2,shot.title,shot.sub,.73);
+    const update=REC.welcomeUpdate;
+    const age=(now-update.start)/1000;
+    drawWelcomeUpdate(g,W2,H2,age,update,REC.stopping);
+    if(update.ballot&&age>=update.ballotAt+VOTE_BALLOT_FADE)REC.shownBallot=update.ballot;
     $('recBtn').textContent=`⏹ Parar ${Math.floor(hAge)}s`;
     return;
   }
@@ -2766,6 +2780,7 @@ function recFrame(now){
   if(STUDIO.captions&&TOUR&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
   if(REC.vote){
     drawVoteOverlay(g,W2,H2,hAge,REC.vote);
+    if(hAge>=REC.vote.ballotAt+VOTE_BALLOT_FADE)REC.shownBallot=REC.vote.options;
     if(STUDIO.music&&Math.floor(hAge/5)!==REC.vote.musicStep&&hAge<REC.vote.seconds-2){REC.vote.musicStep=Math.floor(hAge/5);sfx('tune')}
     if(hAge>=REC.vote.seconds&&!REC.stopping)stopRec();
   }
@@ -2820,13 +2835,18 @@ function startRec(auto,format=STUDIO.format){
   audioInit();const hasA=soundRec&&RECDEST&&RECDEST.stream.getAudioTracks().length>0;
   const types=hasA?['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=avc1,mp4a.40.2','video/mp4']:['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4;codecs=avc1.42E01E','video/mp4'];let mime='';for(const t of types)if(MediaRecorder.isTypeSupported(t)){mime=t;break}
   let mr;try{const vs=c.captureStream(30),tr=[...vs.getVideoTracks()];if(hasA)tr.push(...RECDEST.stream.getAudioTracks());const stream=new MediaStream(tr);mr=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:5000000,videoKeyFrameIntervalDuration:1000}:undefined)}catch(e){modal(`<h3>🎬 Gravar vídeo</h3><p>Não deu para gravar aqui (${esc(e.message||e)}). Use o gravador de tela do celular.</p><button class="btn" id="mX">Fechar</button>`);$('mX').onclick=closeModal;return}
-  REC={c,g,mr,chunks:[],start:performance.now(),recordDay:day(),auto,studioMode:STUDIO.mode,hookKind:auto?'tour':'free',ext:(mr.mimeType||mime).includes('mp4')?'mp4':'webm'};
-  mr.ondataavailable=e=>{if(e.data&&e.data.size)REC&&REC.chunks.push(e.data)};
-  const R0=REC;mr.onstop=()=>finishRec(R0);
+  const R0={c,g,mr,chunks:[],start:performance.now(),recordDay:day(),auto,studioMode:STUDIO.mode,hookKind:auto?'tour':'free',ext:(mr.mimeType||mime).includes('mp4')?'mp4':'webm'};
+  mr.ondataavailable=e=>{if(e.data&&e.data.size)R0.chunks.push(e.data)};
+  mr.onstop=()=>finishRec(R0);
+  try{mr.start(500)}catch(e){
+    modal(`<h3>🎬 Gravar vídeo</h3><p>Não deu para iniciar a gravação (${esc(e.message||e)}).</p><button class="btn" id="mX">Fechar</button>`);
+    $('mX').onclick=closeModal;return;
+  }
+  REC=R0;
   if(!$('panel').classList.contains('hidden'))togglePanel();
   $('camBtn').style.display='none';$('recBtn').style.display='block';
   if(ARRIVALS.active&&STUDIO.mode==='welcome')configureWelcomeArrival(ARRIVALS.seconds);
-  recFrame(performance.now());mr.start(500);
+  recFrame(performance.now());
   if(auto&&!REC.arrivalId){if(STUDIO.mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}else startTour()}else startTour();if(TOUR)REC.tourDuration=TOUR.steps.reduce((sum,step)=>sum+step.dur,0)}if(STUDIO.mode==='welcome'&&!npcs.length&&!auto)startTour();
 }
 function configureWelcomeArrival(seconds){
@@ -2948,9 +2968,10 @@ async function finishRec(R0){
   if(R0.welcomeReplay)$('vReplay').onclick=()=>{welcomeStartBatch(R0.welcomeReplay);if(REC)URL.revokeObjectURL(url)};
   $('vCopy').onclick=async()=>{
    const names=(R0.welcomeReplay?.ids||[arrivalNpc?.id]).map(id=>npcs.find(n=>n.id===id)?.name).filter(Boolean);
-   const vote=R0.vote?.options.map((key,i)=>`${i+1}. ${BT[key].label}`).join('\n');
-   const title=vote?'Qual será a próxima obra de Pixelândia?':names.length?'Novos moradores em Pixelândia':R0.dayRecap?`Da noite ao amanhecer em Pixelândia · Dia ${videoDay}`:`Mundo Pixelândia · Dia ${videoDay}`;
-   const detail=vote?`${vote}\n\nVote nos comentários com 1, 2 ou 3.`:names.length?`Boas-vindas a ${names.join(', ')}!\n\nComente seu nome e profissão para morar na vila.`:`${R0.dayRecap?.highlight?.t||'Acompanhe a vida em Pixelândia.'}\n\nComente seu nome e profissão para morar na vila.`;
+   const vote=R0.shownBallot?.map((key,i)=>`${i+1}. ${BT[key].label}`).join('\n');
+   const title=names.length&&vote?'Novos moradores e votação em Pixelândia':vote?'Qual será a próxima obra de Pixelândia?':names.length?'Novos moradores em Pixelândia':R0.dayRecap?`Da noite ao amanhecer em Pixelândia · Dia ${videoDay}`:`Mundo Pixelândia · Dia ${videoDay}`;
+   const intro=names.length?`Boas-vindas a ${names.join(', ')}!`:R0.dayRecap?.highlight?.t||'Acompanhe a vida em Pixelândia.';
+   const detail=vote?`${names.length?intro+'\n\n':''}${vote}\n\nVote nos comentários com 1, 2 ou 3.`:`${intro}\n\nComente seu nome e profissão para morar na vila.`;
    const copy=title+'\n\n'+detail;
    try{await navigator.clipboard.writeText(copy);$('vMsg').textContent='Título e descrição copiados.'}
    catch(e){prompt('Copie o título e a descrição',copy)}
@@ -3067,6 +3088,8 @@ function drawWelcomeGroup(g,w,h,age,G){
 function welcomeGroupPreview(){
  const count=WELCOME_QUEUE.length;
  if(!count){alert('Adicione pelo menos um morador à lista.');return}
+ const ballot=STUDIO.welcomeVote?voteReadOptions('stWelcomeVoteOption'):null;
+ if(STUDIO.welcomeVote&&!ballot)return;
  const style=WELCOME_STYLE;
  if($('stScriptMode').checked||style==='individual'||(style==='auto'&&count<5)){
   const scripted=$('stScriptMode').checked;
@@ -3079,7 +3102,7 @@ function welcomeGroupPreview(){
    ?scenes.filter(scene=>scene.type!=='invite').map(scene=>'<li><b>'+esc(scene.name||({village:'Abertura',final:'Encerramento'}[scene.type]||scene.type))+'</b> '+esc(scene.lines.join(' '))+'</li>')
    :['Abertura na vila',...WELCOME_QUEUE.map(d=>d.name+' · '+(d.custom||PROF[d.prof]?.label||d.prof)+' · '+ARRIVALS.seconds+' s')].map(line=>'<li>'+esc(line)+'</li>');
   for(const shot of welcomeUpdateShots(STUDIO.welcomeResult,WELCOME_QUEUE,true))rows.push('<li>'+esc(shot.title+' · '+shot.sub)+'</li>');
-  rows.push('<li>Convite para morar na vila</li>');
+  rows.push(ballot?`<li>Votação · ${ballot.map((key,i)=>esc((i+1)+'. '+BT[key].label)).join(' · ')} · Comente 1, 2 ou 3</li>`:'<li>Convite para morar na vila</li>');
   modal('<h3><span>Roteiro de boas-vindas</span><button class="btn sm" id="mX">✕</button></h3><ol>'+rows.join('')+'</ol><button class="btn" id="stBack">Voltar ao Estúdio</button>');
   $('mX').onclick=$('stBack').onclick=openRecMenu;
   return;
@@ -3101,8 +3124,8 @@ function welcomeGroupPreview(){
  const canvas=layer.querySelector('canvas');canvas.width=w;canvas.height=h;
  const g=canvas.getContext('2d');
  const start=performance.now(),shots=welcomeUpdateShots(STUDIO.welcomeResult,residents,true);
- const updateDuration=shots.reduce((sum,shot)=>sum+shot.dur,0);
- const preview={groupWelcome,start,raf:0,welcomeUpdate:{start:start+groupWelcome.cta*1000,shots}};
+ const update=createWelcomeUpdate(start+groupWelcome.cta*1000,shots,ballot);
+ const preview={groupWelcome,start,raf:0,welcomeUpdate:update};
  WELCOME_PREVIEW=preview;
  function stop(){
   cancelAnimationFrame(preview.raf);WELCOME_PREVIEW=null;layer.remove();
@@ -3115,13 +3138,9 @@ function welcomeGroupPreview(){
   const age=(now-preview.start)/1000;
   const sw=cv.width,sh=cv.height,cropW=Math.min(sw,sh*w/h),cropH=cropW*h/w;
   g.drawImage(cv,(sw-cropW)/2,(sh-cropH)/2,cropW,cropH,0,0,w,h);
-  if(age>=groupWelcome.cta+updateDuration)drawLivingInvite(g,w,h);
-  else if(STUDIO.captions){
-   const shot=welcomeUpdateShot(shots,age-groupWelcome.cta);
-   if(age>=groupWelcome.cta&&shot)drawWelcomeCard(g,w,h,shot.title,shot.sub,.73);
-   else drawWelcomeGroup(g,w,h,age,groupWelcome);
-  }
-  if(age>=groupWelcome.cta+updateDuration+LIVING_INVITE_SECONDS)stop();
+  if(now>=update.start)drawWelcomeUpdate(g,w,h,(now-update.start)/1000,update,age>=groupWelcome.cta+update.end);
+  else if(STUDIO.captions)drawWelcomeGroup(g,w,h,age,groupWelcome);
+  if(age>=groupWelcome.cta+update.end+LIVING_INVITE_SECONDS)stop();
   else preview.raf=requestAnimationFrame(tick);
  }
  layer.querySelector('button').onclick=stop;
@@ -3188,6 +3207,23 @@ function cameraScriptExtract(lines){
  }
  return {lines:text,cues,extra:cues.reduce((n,c)=>n+(c.wait||0),0)};
 }
+function setScriptCardTiming(section,duration){
+ const holds=section.lines.map(()=>0);
+ for(const cue of section.cues)if(cue.wait&&holds.length)holds[Math.min(cue.at,holds.length-1)]+=cue.wait;
+ const base=holds.length?Math.max(0,duration-holds.reduce((sum,hold)=>sum+hold,0))/holds.length:0;
+ let start=0;
+ section.cardStarts=holds.map(hold=>{
+  const at=start;
+  start+=base+hold;
+  return at;
+ });
+ section.duration=duration;
+}
+function scriptCardAt(section,age){
+ if(!section?.lines.length)return null;
+ const index=section.cardStarts.findLastIndex(start=>start<=age);
+ return section.lines[Math.max(0,index)];
+}
 let CAMERA_SCRIPT=null;
 function cameraScriptTick(now){
  const director=VOTE_PREVIEW||REC;
@@ -3205,9 +3241,9 @@ function cameraScriptTick(now){
 function cameraScriptTimeline(scenes,origin){
  const cues=[];let t=origin;
  for(const sc of scenes){
-  const duration=sc.duration||scriptDuration(sc.lines,6),clean=cameraScriptExtract(sc.lines);
-  for(const c of clean.cues)if(c.target||c.zoom){
-   const at=t+Math.min(duration-1,c.at/Math.max(1,clean.lines.length)*duration);
+  const {duration,cardStarts}=sc;
+  for(const c of sc.cues)if(c.target||c.zoom){
+   const at=t+(cardStarts[c.at]??Math.max(0,duration-.5));
    cues.push({time:at,target:c.target||{x:cam.x,y:cam.y,z:c.zoom}});
   }
   t+=duration;
@@ -3289,8 +3325,8 @@ function studioScriptAttach(scenes,mode){
  const main=sections.find(x=>x.cmd===key);
  const mainMin=mode==='vote'?STUDIO.voteSeconds:({rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[STUDIO.event]||60);
  main.duration=Math.max(main.duration,mainMin);
- let t=0;for(const section of sections){section.start=t;t+=section.duration}
- REC.cameraTimeline=cameraScriptTimeline(scenes.map((scene,i)=>({...scene,duration:sections[i].duration})),0);
+ let t=0;for(const section of sections){section.start=t;setScriptCardTiming(section,section.duration);t+=section.duration}
+ REC.cameraTimeline=cameraScriptTimeline(sections,0);
  REC.customStudio={mode,sections,duration:t,mainStart:main.start,mainDuration:main.duration};
  if(mode==='vote'){REC.vote.seconds=t;REC.vote.start=main.start;REC.vote.visualSeconds=main.duration}
  if(mode==='event'){REC.ev.t0=REC.start+main.start*1000;REC.ev.scripted=true}
@@ -3322,10 +3358,14 @@ const SHORTS_DRAFT={name:'Heitor',prof:'lenhador',custom:'',sex:'m',handle:'',pe
 const VOTE_BUILDINGS=Object.entries(BT).filter(([,building])=>!building.vip);
 const VOTE_BUILDING_KEYS=new Set(VOTE_BUILDINGS.map(([key])=>key));
 const VOTE_BALLOT_SECONDS=8;
+const VOTE_BALLOT_FADE=.35;
 let VOTE_PREVIEW=null;
 
-function voteReadOptions(){
- const options=[0,1,2].map(i=>$('stVote'+i)?.value);
+function voteOptionsFields(prefix){
+ return [0,1,2].map(i=>`<label for="${prefix}${i}">Opção ${i+1}</label><select class="in" id="${prefix}${i}">${VOTE_BUILDINGS.map(([key,b])=>`<option value="${key}">${b.icon} ${esc(b.label)}</option>`).join('')}</select>`).join('');
+}
+function voteReadOptions(prefix='stVote'){
+ const options=[0,1,2].map(i=>$(prefix+i)?.value);
  if(options.some(key=>!VOTE_BUILDING_KEYS.has(key))||new Set(options).size!==3){
   alert('Selecione três obras diferentes do catálogo.');return null;
  }
@@ -3355,14 +3395,12 @@ function votePlan(){
   const sections=(scenes||[{lines:voteStory()}]).map(scene=>{
    const clean=cameraScriptExtract(scene.lines);
    const duration=scenes?Math.max(clean.lines.length?4:0,clean.lines.reduce((sum,line)=>sum+Math.max(2.5,line.length/18),0))+clean.extra:introSeconds;
-   const section={...clean,start:end,duration};
+   const section={...clean,start:end};
+   setScriptCardTiming(section,duration);
    end+=duration;
    return section;
   });
-  const cameraTimeline=sections.flatMap(section=>section.cues.filter(cue=>cue.target||cue.zoom).map(cue=>({
-   time:section.start+Math.min(Math.max(0,section.duration-.5),cue.at/Math.max(1,section.lines.length)*section.duration),
-   target:cue.target||{x:cam.x,y:cam.y,z:cue.zoom}
-  }))).sort((a,b)=>a.time-b.time);
+  const cameraTimeline=cameraScriptTimeline(sections,0);
   STUDIO.voteOptions=options;
   const ballotAt=Math.max(introSeconds,end);
   return {options,sections,ballotAt,seconds:ballotAt+VOTE_BALLOT_SECONDS,cameraTimeline};
@@ -3372,13 +3410,11 @@ function drawVoteOverlay(g,w,h,age,vote){
  if(age<vote.ballotAt){
   const section=vote.sections.find(scene=>scene.lines.length&&age>=scene.start&&age<scene.start+scene.duration)||
    vote.sections.findLast(scene=>scene.lines.length);
-  if(section?.lines.length){
-   const index=clamp(Math.floor((age-section.start)/section.duration*section.lines.length),0,section.lines.length-1);
-   drawWelcomeCard(g,w,h,section.lines[index],'',.72);
-  }
+  const msg=section&&scriptCardAt(section,age-section.start);
+  if(msg)drawWelcomeCard(g,w,h,msg,'',.72);
   return;
  }
- const alpha=clamp((age-vote.ballotAt)/.35,0,1);
+ const alpha=clamp((age-vote.ballotAt)/VOTE_BALLOT_FADE,0,1);
  const scale=Math.min(w/720,h/960);
  g.save();g.globalAlpha=alpha;
  drawWelcomeCard(g,w,h,'Qual obra vamos construir?','',.16,'light',scale);
@@ -3482,6 +3518,8 @@ function drawDayRecap(g,w,h,recap,now){
  }
 }
 const STUDIO={voteOptions:['casa','celeiro','mercado'],voteSeconds:20,mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party',episodeVote:true,welcomeResult:''};
+STUDIO.welcomeVote=false;
+STUDIO.welcomeVoteOptions=[...STUDIO.voteOptions];
 const USE_STUDIO_SCRIPT={vote:false,event:false};
 try{
  const draft=JSON.parse(localStorage.getItem(WELCOME_DRAFT_KEY)||'null');
@@ -3613,7 +3651,9 @@ function openRecMenu(){
     ${recordedVotes?'<optgroup label="Resultados registrados">'+recordedVotes+'</optgroup>':''}
     ${readyWorks?'<optgroup label="Obras prontas">'+readyWorks+'</optgroup>':''}
    </select>
-   <p class="tip">Depois da chegada, o vídeo mostra o estado atual da vila e fecha com o convite para morar nela.</p>
+   <label><input type="checkbox" id="stWelcomeVote" ${STUDIO.welcomeVote?'checked':''}> Abrir votação para a próxima obra no final</label>
+   <div id="stWelcomeBallot" ${STUDIO.welcomeVote?'':'hidden'}>${voteOptionsFields('stWelcomeVoteOption')}</div>
+   <p class="tip">Depois da chegada, o vídeo mostra o estado atual da vila.</p>
  <div id="stWelcomeScript"><div class="bgrp">📝 Roteiro do episódio</div><label><input type="checkbox" id="stScriptMode"> Roteiro personalizado</label>
  <div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], [MORADOR: Nome], [CENA: FINAL], [CONVITE]. Para mudar a câmera dentro de uma cena, use [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3] ou [CAMERA: SEGUIR Nome]. Também: [ZOOM: 2] e [ESPERAR: 3].</p>
  <textarea class="in" id="stScriptText" rows="12" style="width:100%;box-sizing:border-box"></textarea>
@@ -3661,6 +3701,15 @@ function openRecMenu(){
  if($('stNewProf')){ $('stNewName').value=SHORTS_DRAFT.name; $('stNewProf').value=SHORTS_DRAFT.prof; $('stNewSex').value=SHORTS_DRAFT.sex; $('stNewCustom').value=SHORTS_DRAFT.custom; $('stNewCustom').style.display=SHORTS_DRAFT.prof==='custom'?'block':'none'; $('stNewHandle').value=SHORTS_DRAFT.handle; $('stNewPet').value=SHORTS_DRAFT.pet; $('stNewProf').onchange=()=>{$('stNewCustom').style.display=$('stNewProf').value==='custom'?'block':'none'};$('stSeconds').value=String(ARRIVALS.seconds);$('stSeconds').onchange=()=>ARRIVALS.seconds=Number($('stSeconds').value);}
 
  if($('stQueueAdd')){
+  $('stWelcomeVote').onchange=e=>{
+   STUDIO.welcomeVote=e.target.checked;
+   $('stWelcomeBallot').hidden=!STUDIO.welcomeVote;
+   welcomeQueueRender();
+  };
+  for(const [i,key] of STUDIO.welcomeVoteOptions.entries()){
+   const field=$('stWelcomeVoteOption'+i);
+   field.value=key;field.onchange=()=>{STUDIO.welcomeVoteOptions[i]=field.value};
+  }
   const result=$('stWelcomeResult');
   result.value=STUDIO.welcomeResult;
   if(result.selectedIndex<0){result.value='';STUDIO.welcomeResult=''}
@@ -3960,7 +4009,7 @@ const enc=a=>{let s='';for(let i=0;i<a.length;i+=4096)s+=String.fromCharCode.app
 const dec=(s,T2)=>{const a=new T2(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i)-48;return a};
 function serialize(){return JSON.stringify({v:2,seed,villageName,mins,res,lastLunch,goalIdx,hooks,ground:enc(ground),obj:enc(obj),objVar:enc(objVar),crop:enc(crop),
   buildings:buildings.map(b=>[b.id,b.type,b.x,b.y,b.done?1:0,Math.round(b.progress*10)/10,b.manual?1:0,b.owner??-1,b.rail?b.rail.map(v=>v.toString(36)).join('.'):0]),sea:1,season:SEASON,coast:COAST,dist:DIST,dayMode,epMin,daylog:DAYLOG,constructionVotes,queue,nextId,nextBid,spawn,
-  npcs:npcs.map(n=>[n.id,n.name,n.prof,n.sex,n.custom,n.home,n.si,n.hi,n.pi,n.ci,n.beard?1:0,n.fed?1:0,n.day||1,n.spouse??-1,n.kids&&n.kids.length?n.kids.map(k=>k.name+'|'+k.sex):0,n.st||0,(n.vip?1:0)|(n.fan?2:0)|(n.mayor?4:0),n.pet?n.pet.k+n.pet.c+(n.pet.name?'|'+n.pet.name:''):0])})}
+  npcs:npcs.map(n=>[n.id,n.name,n.prof,n.sex,n.custom,n.home,n.si,n.hi,n.pi,n.ci,n.beard?1:0,n.fed?1:0,n.day||1,n.spouse??-1,n.kids&&n.kids.length?n.kids.map(k=>k.name+'|'+k.sex):0,n.st||0,(n.vip?1:0)|(n.fan?2:0)|(n.mayor?4:0),n.pet?n.pet.k+n.pet.c+(n.pet.name?'|'+n.pet.name:''):0,n.youtubeHandle||''])})}
 function restoreNPCs(){for(const n of npcs){if(n.prof==='custom'&&/poli?ss?onograf/.test(norm(n.custom||''))){n.prof='polissonografista';n.custom=''}if(n.prof==='custom'&&typeof PROF_ALIAS!=='undefined'&&PROF_ALIAS[norm(n.custom||'')]){n.prof=PROF_ALIAS[norm(n.custom)];n.custom=''}npcColors(n);n.st=n.st||{};n.kids=n.kids||[];if(n.spouse==null)n.spouse=-1;n.day=n.day||1;n.abT=0;n.kid=null;n.petO=null;if(n.pet===undefined)n.pet=null;Object.assign(n,{dir:'down',plan:[],step:null,carry:null,carryN:0,carryRes:null,inside:false,sleeping:false,idle:0,walkT:0,animT:0,lifeT:0,anim:null,bubble:null,status:'Acordando',active:false,x:spawn.x*T+8,y:spawn.y*T+12})}}
 function load(s){
   if(!s||(s.v!==1&&s.v!==2))throw new Error('bad');
@@ -3971,7 +4020,7 @@ function load(s){
     if(ground.length!==N)throw new Error('size');
     buildings=(s.buildings||[]).map(a=>{const d=BT[a[1]];return{id:a[0],type:a[1],x:a[2],y:a[3],w:d.w,h:d.h,done:!!a[4],progress:a[5],need:d.time,manual:!!a[6],owner:a[7]>=0?a[7]:null,rail:a[8]?a[8].split('.').map(v=>parseInt(v,36)):null}});
     queue=(s.queue||[]).filter(q=>BT[q.type]);spawn=s.spawn||spawn;
-    npcs=(s.npcs||[]).map(a=>({id:a[0],name:a[1],prof:PROF[a[2]]||a[2]==='custom'?a[2]:'custom',sex:a[3],custom:a[4],home:a[5],si:a[6],hi:a[7],pi:a[8],ci:a[9],beard:!!a[10],fed:!!a[11],day:a[12]||1,spouse:a[13]??-1,kids:a[14]?a[14].map(t=>{const[nm,sx]=t.split('|');return{name:nm,sex:sx}}):[],st:a[15]||{},vip:!!(a[16]&1),fan:!!(a[16]&2),mayor:!!(a[16]&4),pet:a[17]?{k:a[17].slice(0,3),c:parseInt(a[17].slice(3))||0,name:(String(a[17]).split('|')[1]||'')}:null}));
+    npcs=(s.npcs||[]).map(a=>({id:a[0],name:a[1],prof:PROF[a[2]]||a[2]==='custom'?a[2]:'custom',sex:a[3],custom:a[4],home:a[5],si:a[6],hi:a[7],pi:a[8],ci:a[9],beard:!!a[10],fed:!!a[11],day:a[12]||1,spouse:a[13]??-1,kids:a[14]?a[14].map(t=>{const[nm,sx]=t.split('|');return{name:nm,sex:sx}}):[],st:a[15]||{},vip:!!(a[16]&1),fan:!!(a[16]&2),mayor:!!(a[16]&4),pet:a[17]?{k:a[17].slice(0,3),c:parseInt(a[17].slice(3))||0,name:(String(a[17]).split('|')[1]||'')}:null,youtubeHandle:typeof a[18]==='string'?a[18]:''}));
     nextId=s.nextId;nextBid=s.nextBid;
   }
   cropT=new Float32Array(N);bld=new Int16Array(N).fill(-1);bById.clear();
