@@ -361,6 +361,8 @@ function genWorld(){
   obj[idx(CX,CY)]=O_FIRE;obj[idx(CRX,CRY)]=O_CRATE;
 }
 function newWorld(){
+  if(typeof invitePreviewStop==='function'&&INVITE_PREVIEW)invitePreviewStop(false);
+  TOUR=null;
   seed=(Math.random()*1e9)|0;genWorld();computePoints();TRAINS.clear();PLANES.clear();SHIPS=[];DIST={};DPOS={};DAYLOG=[];
   buildings=[];queue=[];npcs=[];particles=[];reserved.clear();bById.clear();
   res={wood:0,stone:0,fish:0,crops:0,meals:0,coins:0,tools:0};
@@ -2087,6 +2089,76 @@ function buildInvite(){
   st.push({x:cxw,y:cyw,z:3,dur:6,title:'🔔 Se inscreva',sub:'e veja seu morador construir o mundo!',cta:true,last:true});
   return st;
 }
+// Convite cinematográfico para um mundo recém-criado e ainda sem moradores.
+const INVITE={seconds:25};
+let INVITE_PREVIEW=null;
+function inviteSteps(){
+ const x=CX*T+8,y=CY*T+8;
+ const points=[
+  {x,y,z:3.0,dur:3,title:'',sub:''},
+  {x:x-15*T,y:y-8*T,z:2.3,dur:4,title:'🌍 Um mundo novo nasceu!',sub:'Mas ninguém mora aqui ainda…'},
+  {x:LAKEPT.x*T,y:LAKEPT.y*T,z:2.6,dur:4,title:'🌊 Um lago esperando pescadores',sub:'Quem vai trabalhar aqui?'},
+  {x:(QUARRIES[0][0])*T,y:QUARRIES[0][1]*T,z:2.7,dur:4,title:'🌲 Uma floresta cheia de oportunidades',sub:'Lenhador, fazendeiro, construtor…'},
+  {x,y,z:3.1,dur:5,title:'🏡 Você pode morar aqui!',sub:'Comente seu NOME + PROFISSÃO'},
+  {x,y,z:2.8,dur:5,title:'💬 Comente nome e profissão!',sub:'E apareça como morador no próximo vídeo',cta:true}
+ ];
+ return points;
+}
+function inviteBegin(preview){
+ if(npcs.length){alert('O vídeo de convite do mundo vazio só está disponível antes de adicionar o primeiro morador.');return false}
+ if(REC){alert('Finalize a gravação atual primeiro.');return false}
+ if(TOUR)TOUR=null;
+ follow=null;pinnedFollow=false;
+ TOUR={steps:inviteSteps(),i:0,t:0,invite:false,inviteShort:true};
+ const first=TOUR.steps[0];cam.x=first.x;cam.y=first.y;cam.z=first.z;
+ return true;
+}
+function inviteOverlay(g,w,h,age){
+ if(!STUDIO.captions)return;
+ const scale=w/720;
+ if(age<3){drawHook(g,w,h,scale,'ESSE MUNDO ESTÁ VAZIO! 😱',age);return}
+ if(age>=INVITE.seconds-3.4){drawShortsCTA(g,w,h,scale,age,INVITE.seconds);return}
+ if(TOUR&&TOUR.inviteShort){const step=TOUR.steps[TOUR.i];if(step&&step.title)drawCaption(g,w,h,scale,step.title,capSub(step),step.cta,TOUR.t)}
+}
+function invitePreviewStop(reopen){
+ if(!INVITE_PREVIEW)return;
+ const pv=INVITE_PREVIEW;INVITE_PREVIEW=null;
+ cancelAnimationFrame(pv.raf);
+ document.getElementById('invitePreviewLayer')?.remove();
+ TOUR=null;cam.x=pv.cam.x;cam.y=pv.cam.y;cam.z=pv.cam.z;
+ follow=pv.follow;pinnedFollow=pv.pinnedFollow;
+ if(reopen)openRecMenu();
+}
+function invitePreview(){
+ if(!inviteBegin(true))return;
+ const pv={start:performance.now(),cam:{...INVITE_PREVIEW_CAM},follow:INVITE_PREVIEW_FOLLOW,pinnedFollow:INVITE_PREVIEW_PIN,raf:0};
+ INVITE_PREVIEW=pv;
+ closeModal();
+ const layer=document.createElement('div');layer.id='invitePreviewLayer';
+ layer.style.cssText='position:fixed;inset:0;z-index:10050;background:#101b12;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:12px;box-sizing:border-box';
+ layer.innerHTML='<strong style="color:#fff;font-size:17px">🎬 PRÉVIA DO CONVITE — mundo vazio</strong><canvas width="540" height="960" style="display:block;max-width:100%;max-height:72vh;aspect-ratio:9/16;object-fit:contain;border:3px solid #e9b768;border-radius:12px"></canvas><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="btn" id="inviteBack">↩️ Voltar</button><button class="btn" id="inviteRecord">🔴 Gravar convite</button></div>';
+ document.body.appendChild(layer);
+ const target=layer.querySelector('canvas'),g=target.getContext('2d');
+ function tick(){if(INVITE_PREVIEW!==pv)return;const age=(performance.now()-pv.start)/1000;
+  const sw=cv.width,sh=cv.height,ratio=target.width/target.height;let ww=sw,hh=sw/ratio;if(hh>sh){hh=sh;ww=sh*ratio}
+  g.clearRect(0,0,target.width,target.height);g.drawImage(cv,(sw-ww)/2,(sh-hh)/2,ww,hh,0,0,target.width,target.height);
+  inviteOverlay(g,target.width,target.height,age);
+  if(age>=INVITE.seconds){invitePreviewStop(true);return}
+  pv.raf=requestAnimationFrame(tick)
+ }
+ layer.querySelector('#inviteBack').onclick=()=>invitePreviewStop(true);
+ layer.querySelector('#inviteRecord').onclick=()=>{invitePreviewStop(false);inviteRecord()};tick();
+}
+let INVITE_PREVIEW_CAM={x:0,y:0,z:1},INVITE_PREVIEW_FOLLOW=null,INVITE_PREVIEW_PIN=false;
+function inviteRecord(){
+ if(npcs.length){alert('O mundo já possui moradores. Grave o convite antes do primeiro cadastro.');return}
+ STUDIO.mode='invitation';STUDIO.format='vertical';STUDIO.camera='auto';STUDIO.hud=false;
+ const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
+ closeModal();if(!inviteBegin(false)){soundRec=oldSound;delete STUDIO.restoreSound;return}
+ startRec(false);
+ if(!REC){TOUR=null;soundRec=oldSound;delete STUDIO.restoreSound;return}
+ REC.inviteSeconds=INVITE.seconds;REC.hookKind='';REC.inviteMusicStep=-1;
+}
 function drawInviteSpot(){
   if(!TOUR||!TOUR.invite)return;const x=CX*T-10,y=CY*T+12,b=Math.round(Math.sin(gtime*3)*1.5);const dm=TOUR.demo;
   if(dm&&dm.shown){const j=Math.abs(Math.sin(gtime*7))*2;dm.y=y-j;drawNPC(dm);dm.y=y;ctx.font='700 6px "Pixelify Sans",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineWidth=2;ctx.strokeStyle='rgba(40,20,5,.9)';ctx.strokeText('🎣 Ana',x,y-31);ctx.fillStyle='#fff';ctx.fillText('🎣 Ana',x,y-31)}
@@ -2135,7 +2207,7 @@ function buildTour(){
 }
 function startTour(){TOUR={steps:buildTour(),i:0,t:0,invite:!npcs.length};const s0=TOUR.steps[0];if(s0&&s0.x!=null){cam.x=s0.x;cam.y=s0.y;cam.z=s0.z}
   if(TOUR.invite)TOUR.demo={x:CX*T-10,y:CY*T+12,dir:'down',moving:false,walkT:0,skin:SKINS[1],hairC:HAIRS[2%HAIRS.length],pants:PANTS[0],shirt:PROF.pescador.shirt,sex:'f',prof:'pescador',shown:false};follow=null;pinnedFollow=false}
-function endTour(){if(REC&&REC.auto&&TOUR){TOUR.i=TOUR.steps.length-1;TOUR.t=TOUR.steps[TOUR.i].dur;TOUR.hold=true;stopRec();return}TOUR=null}
+function endTour(){if(TOUR&&TOUR.inviteShort){TOUR.hold=true;return}if(REC&&REC.auto&&TOUR){TOUR.i=TOUR.steps.length-1;TOUR.t=TOUR.steps[TOUR.i].dur;TOUR.hold=true;stopRec();return}TOUR=null}
 function tourTick(dt){if(!TOUR||TOUR.hold)return;const st=TOUR.steps[TOUR.i];TOUR.t+=dt;let tx=st.x,ty=st.y;
   if(st.follow!=null){const n=npcs.find(m=>m.id===st.follow);if(n&&n.active){tx=n.x;ty=n.y-8}else if(n){const hb=homeB(n);if(hb){tx=(hb.x+hb.w/2)*T;ty=(hb.y+hb.h)*T}}}
   if(tx!=null){const k=Math.min(1,dt*2.4);cam.x+=(tx-cam.x)*k;cam.y+=(ty-cam.y)*k;cam.z+=(st.z-cam.z)*k}
@@ -2342,13 +2414,14 @@ function recFrame(now){
     g.fillStyle='#f7e2b5';rr(g,-tw/2,-62*s,tw,124*s,16*s);g.fill();g.lineWidth=6*s;g.strokeStyle='#8b4a1f';g.stroke();g.textAlign='center';g.fillStyle='#3b2412';g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.t,0,-16*s,tw-30*s);
     g.fillStyle='#8b4a1f';g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.s,0,32*s,tw-30*s);g.restore()}}
   const hAge=(now-REC.start)/1000;
-  if(STUDIO.captions&&TOUR&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
+  if(STUDIO.captions&&TOUR&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
+  if(REC.inviteSeconds){inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.inviteSeconds&&!REC.stopping)stopRec()}
   if(REC.arrivalId){
     const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-REC.start)/1000;
     if(n&&STUDIO.captions){drawArrivalTag(g,W2,H2,s,n,age);drawShortsCTA(g,W2,H2,s,age,REC.arrivalSeconds)}
     if(age>=REC.arrivalSeconds&&!REC.stopping)stopRec();
   }
-  if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
+  if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
   // marca d'água
   if(STUDIO.captions){g.textAlign='center';g.textBaseline='middle';g.font=`700 ${28*s}px "Pixelify Sans",sans-serif`;g.lineWidth=6*s;g.strokeStyle='rgba(30,18,8,.8)';
   }
@@ -2356,7 +2429,7 @@ function recFrame(now){
     const lim={rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[e.k]||60;
     if((e.seen&&!on&&!e.end)){e.end=now}if((e.end&&now-e.end>3500)||el2>lim){stopRec();return}}
   const el=(now-REC.start)/1000;$('recBtn').textContent=`⏹ Parar ${Math.floor(el/60)}:${String(Math.floor(el%60)).padStart(2,'0')}`;
-  if(!REC.arrivalId&&el>(STUDIO.mode==='episode'?900:STUDIO.mode==='resident'?300:STUDIO.mode==='free'?600:180))stopRec();
+  if(!REC.arrivalId&&!REC.inviteSeconds&&el>(STUDIO.mode==='episode'?900:STUDIO.mode==='resident'?300:STUDIO.mode==='free'?600:180))stopRec();
 }
 function canRecord(){return !!(cv.captureStream&&window.MediaRecorder)}
 function startRecEvent(k){startRec(false);if(!REC)return;REC.hookKind=k;REC.hook=hookText(k);REC.ev={k,t0:performance.now(),seen:false};setTimeout(()=>{if(REC&&REC.ev)startEvent(k)},1500)}
@@ -2378,7 +2451,7 @@ function startRec(auto){
 }
 function stopRec(){if(!REC||REC.stopping)return;REC.stopping=true;$('recBtn').style.display='none';
   // grava um pouquinho a mais: o gravador do celular perde o finalzinho do vídeo ao parar
-  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&R0.auto)TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},REC.ext==='mp4'?3500:900)}
+  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},REC.ext==='mp4'?3500:900)}
 // ===== corrige a duração do vídeo (MediaRecorder grava sem duração → YouTube mostra 0s) =====
 // mede a duração real gravada dentro do arquivo (em ms), em vez de usar o relógio
 function mp4MediaMs(buf){
@@ -2472,8 +2545,8 @@ async function finishRec(R0){
     <div class="row"><button class="btn big" id="vSave" style="margin-top:0">💾 Salvar vídeo</button>${arrivalNpc?'<button class="btn big" id="vNext" style="margin-top:0">'+'➕ Cadastrar próximo inscrito'+'</button>':''}</div><p id="vMsg" style="font-size:13px"></p><button class="btn sm" id="vSaveO" style="opacity:.8">Problema no vídeo? Salvar a versão original</button>`);
   $('mX').onclick=()=>{closeModal();URL.revokeObjectURL(url)};
   const doSave=async(bl,suf)=>{const m=$('vMsg');let dl=null;try{dl=window.claude&&window.claude.use?await window.claude.use('downloads'):null}catch(e){}
-    if(!dl){const a=document.createElement('a');const u=URL.createObjectURL(bl);a.href=u;a.download=arrivalLabel?`pixelandia-chegada-${arrivalLabel}${suf}.${R0.ext}`:`mundo-pixelandia-dia${day()}${suf}.${R0.ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);m.textContent='⬇️ Download iniciado no navegador.';return}
-    try{await dl.save({filename:arrivalLabel?`pixelandia-chegada-${arrivalLabel}${suf}.${R0.ext}`:`mundo-pixelandia-dia${day()}${suf}.${R0.ext}`,data:bl});m.textContent='✅ Vídeo salvo!'}
+    if(!dl){const a=document.createElement('a');const u=URL.createObjectURL(bl);a.href=u;a.download=arrivalLabel?`pixelandia-chegada-${arrivalLabel}${suf}.${R0.ext}`:R0.inviteSeconds?`pixelandia-convite-mundo-vazio${suf}.${R0.ext}`:`mundo-pixelandia-dia${day()}${suf}.${R0.ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);m.textContent='⬇️ Download iniciado no navegador.';return}
+    try{await dl.save({filename:arrivalLabel?`pixelandia-chegada-${arrivalLabel}${suf}.${R0.ext}`:R0.inviteSeconds?`pixelandia-convite-mundo-vazio${suf}.${R0.ext}`:`mundo-pixelandia-dia${day()}${suf}.${R0.ext}`,data:bl});m.textContent='✅ Vídeo salvo!'}
     catch(e){m.textContent=e&&e.code==='declined'?'Salvamento cancelado.':e&&e.code==='rate_limited'?'Espere um pouco e tente de novo.':'Não deu para salvar ('+((e&&e.code)||'erro')+').'}};
   if(arrivalNpc&&$('vNext'))$('vNext').onclick=()=>{URL.revokeObjectURL(url);closeModal();ARRIVALS.active=false;ARRIVALS.ids=[];STUDIO.mode='welcome';openRecMenu()};
   $('vSave').onclick=()=>doSave(blob,'');$('vSaveO').onclick=()=>doSave(orig,'-original');
@@ -2483,22 +2556,23 @@ let ARRIVAL_PREVIEW=null;
 const SHORTS_DRAFT={name:'Heitor',prof:'lenhador',custom:'',sex:'m',handle:'',pet:''};
 const STUDIO={mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party'};
 function openRecMenu(){
- const modes=[['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
+ const modes=[['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
  modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o conteúdo, ajuste a gravação e comece seu vídeo.</p>
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
  <div class="bgrp">2. Configuração</div><div class="studio-fields"><label>Formato do vídeo</label><select class="in" id="stFormat"><option value="horizontal">▭ Horizontal 16:9 — YouTube</option><option value="vertical">▯ Vertical 9:16 — Shorts / Reels</option></select>
  <label>Câmera</label><select class="in" id="stCamera"><option value="auto">🎬 Diretor automático</option><option value="manual">🕹️ Manual</option><option value="fixed">📌 Fixa</option></select>
  <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 💬 Legendas, títulos e anúncios</label><label><input type="checkbox" id="stMusic"> 🔊 Áudio e efeitos no vídeo</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
- <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia de 20s</button></div>
+ <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia</button></div>
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
  $('mX').onclick=closeModal;
  const f=$('stFormat'),camSel=$('stCamera');f.value=STUDIO.format;camSel.value=STUDIO.camera;
  for(const [key,id] of [['captions','stCaptions'],['music','stMusic'],['hud','stHud']]){$(id).checked=STUDIO[key];$(id).onchange=e=>{STUDIO[key]=e.target.checked;update()}}
  f.onchange=()=>{STUDIO.format=f.value;update()};camSel.onchange=()=>{STUDIO.camera=camSel.value;update()};
  $('modalBox').querySelectorAll('[data-studio]').forEach(b=>b.onclick=()=>{STUDIO.mode=b.dataset.studio;update()});
- function update(){document.querySelectorAll('.studio-mode').forEach(b=>b.classList.toggle('studio-selected',b.dataset.studio===STUDIO.mode));
+ function update(){if(STUDIO.mode==='invitation'){STUDIO.format='vertical';STUDIO.camera='auto';STUDIO.hud=false;f.value='vertical';camSel.value='auto';$('stHud').checked=false}document.querySelectorAll('.studio-mode').forEach(b=>b.classList.toggle('studio-selected',b.dataset.studio===STUDIO.mode));
  let extra='';if(STUDIO.mode==='event'){extra='<label>Evento</label><select class="in" id="stEvent">'+EVENTS.map(([k,i,l])=>`<option value="${k}">${i} ${l}</option>`).join('')+'</select>'}
+ if(STUDIO.mode==='invitation'){extra=`<div class="bgrp">🌍 Convite de inauguração</div><p class="tip">Mostre o mundo vazio com uma chamada forte nos 3 primeiros segundos. Convide o público a comentar nome e profissão para virar morador. Não cria personagens fictícios.</p><p class="tip"><b>Duração:</b> 25 segundos · <b>Formato:</b> vertical 9:16 · <b>Som:</b> efeitos e música sintética</p>${npcs.length?'<p style="color:#a33;font-weight:bold">⚠️ A vila já tem moradores. Crie um mundo novo para gravar a inauguração.</p>':''}`;}
  if(STUDIO.mode==='welcome'){
    extra=`<div class="bgrp">✨ Novo inscrito — cadastrar e gravar</div>
    <p class="tip">Digite os dados do comentário. O morador será criado ao iniciar a gravação e aparecerá caminhando pela estrada até a praça.</p>
@@ -2516,16 +2590,16 @@ function openRecMenu(){
  if($('stNewProf')){ $('stNewName').value=SHORTS_DRAFT.name; $('stNewProf').value=SHORTS_DRAFT.prof; $('stNewSex').value=SHORTS_DRAFT.sex; $('stNewCustom').value=SHORTS_DRAFT.custom; $('stNewCustom').style.display=SHORTS_DRAFT.prof==='custom'?'block':'none'; $('stNewHandle').value=SHORTS_DRAFT.handle; $('stNewPet').value=SHORTS_DRAFT.pet; $('stNewProf').onchange=()=>{$('stNewCustom').style.display=$('stNewProf').value==='custom'?'block':'none'};$('stSeconds').value=String(ARRIVALS.seconds);$('stSeconds').onchange=()=>ARRIVALS.seconds=Number($('stSeconds').value);}
 
  if($('stEvent')){$('stEvent').value=STUDIO.event;$('stEvent').onchange=e=>STUDIO.event=e.target.value}if($('stResident')){$('stResident').value=STUDIO.resident||String(npcs[0]?.id||'');STUDIO.resident=$('stResident').value;$('stResident').onchange=e=>STUDIO.resident=e.target.value}
- function updateSummary(){$('stSummary').textContent=`${STUDIO.format==='horizontal'?'YouTube 16:9':'Shorts 9:16'} · ${STUDIO.camera==='auto'?'câmera automática':STUDIO.camera==='manual'?'câmera manual':'câmera fixa'} · ${STUDIO.captions?'com':'sem'} legendas${STUDIO.mode==='welcome'?' · cadastro e chegada real de novo morador':''}`;}updateSummary();
+ function updateSummary(){$('stSummary').textContent=`${STUDIO.format==='horizontal'?'YouTube 16:9':'Shorts 9:16'} · ${STUDIO.camera==='auto'?'câmera automática':STUDIO.camera==='manual'?'câmera manual':'câmera fixa'} · ${STUDIO.captions?'com':'sem'} legendas${STUDIO.mode==='welcome'?' · cadastro e chegada real de novo morador':STUDIO.mode==='invitation'?' · convite de 25s para mundo vazio':''}`;}updateSummary();
  }
  update();
- $('stStart').onclick=()=>{if(STUDIO.mode==='resident'&&!npcs.length){alert('Adicione um morador antes de gravar sua história.');return}const mode=STUDIO.mode;
+ $('stStart').onclick=()=>{if(STUDIO.mode==='invitation'){inviteRecord();return}if(STUDIO.mode==='resident'&&!npcs.length){alert('Adicione um morador antes de gravar sua história.');return}const mode=STUDIO.mode;
  if(mode==='welcome'){const d=shortsReadDraft();if(!d)return;shortsStartFromDraft(d);return;}else ARRIVALS.active=false;
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  if(mode==='event'){startRecEvent(STUDIO.event)}else{startRec(mode==='welcome'?false:STUDIO.camera==='auto'&&mode!=='free');if(REC&&mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}}}
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;}
  };
- $('stPreview').onclick=()=>{if(STUDIO.mode==='welcome'){const d=shortsReadDraft();if(!d)return;closeModal();shortsPreview(d);return}closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
+ $('stPreview').onclick=()=>{if(STUDIO.mode==='invitation'){INVITE_PREVIEW_CAM={x:cam.x,y:cam.y,z:cam.z};INVITE_PREVIEW_FOLLOW=follow;INVITE_PREVIEW_PIN=pinnedFollow;invitePreview();return}if(STUDIO.mode==='welcome'){const d=shortsReadDraft();if(!d)return;closeModal();shortsPreview(d);return}closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
 }
 
 // ================== BAIRROS ==================
@@ -2859,4 +2933,5 @@ addEventListener('beforeunload',persist);document.addEventListener('visibilitych
 
 </script>
 </body>
+</html>
 </html>
