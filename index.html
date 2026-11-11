@@ -800,9 +800,9 @@ function abstractWork(dt){
 // ================== MORADORES ==================
 function profLabel(n){if(n.prof==='custom')return n.custom||'Morador';const P=PROF[n.prof];return n.sex==='f'?P.labelF:P.label}
 function profIcon(n){return n.prof==='custom'?'⭐':PROF[n.prof].icon}
-function makeNPC(name,prof,sex,custom){
+function makeNPC(name,prof,sex,custom,id=nextId++){
   const P=PROF[prof];
-  return{id:nextId++,name,prof,sex,custom:custom||'',x:spawn.x*T+8,y:spawn.y*T+12,dir:'up',plan:[],step:null,carry:null,carryN:0,carryRes:null,
+  return{id,name,prof,sex,custom:custom||'',x:spawn.x*T+8,y:spawn.y*T+12,dir:'up',plan:[],step:null,carry:null,carryN:0,carryRes:null,
     inside:false,sleeping:false,home:-1,idle:0,walkT:0,animT:0,lifeT:0,anim:null,bubble:null,fed:true,status:'Chegando à vila',active:false,day:day(),st:{},spouse:-1,kids:[],vip:false,fan:false,mayor:false,abT:0,kid:null,pet:null,petO:null,
     si:(Math.random()*SKINS.length)|0,hi:(Math.random()*HAIRS.length)|0,pi:(Math.random()*PANTS.length)|0,ci:(Math.random()*CSHIRT.length)|0,beard:sex==='m'&&Math.random()<0.3};
 }
@@ -1671,12 +1671,21 @@ function render(){
   drawNatureWater();drawVehiclesWater(lights);drawTrains();
   for(const b of buildings){if(b.x+b.w<x0-7||b.x>x1+1||b.y>y1+10||b.y+b.h<y0)continue;list.push({y:(b.y+b.h)*T,k:'b',b})}
   for(const n of npcs){if(!n.active||n.inside||(REC&&!REC.groupWelcome&&REC.arrivalId&&ARRIVALS.active&&ARRIVALS.ids.includes(n.id)&&ARRIVALS.ids.indexOf(n.id)>ARRIVALS.index))continue;const tx=n.x/T,ty=n.y/T;if(tx<x0-1||tx>x1+1||ty<y0-1||ty>y1+2)continue;list.push({y:n.y,k:'n',n});if(n.kid&&!n.sleeping)list.push({y:n.kid.y,k:'kid',n});if(n.pet&&n.petO)list.push({y:n.petO.y,k:'pet',n})}
+  for(const {resident:n} of WELCOME_PREVIEW?.groupWelcome.members||[])list.push({y:n.y,k:'n',n});
   for(const a of WILD)list.push({y:a.y,k:'wild',a});
   for(const c of EV.chickens)list.push({y:c.y,k:'chick',c});
   if(EV.snow>0)list.push({y:(CY-1)*T+15,k:'xmas'});
   list.sort((a,b)=>a.y-b.y);
+  const group=(WELCOME_PREVIEW||REC)?.groupWelcome;
+  const featured=group&&!group.express?group.members[group.lastSlot]?.resident:null;
   for(const e of list){
-    if(e.k==='n')drawNPC(e.n);
+    if(e.k==='n'){
+      if(e.n===featured){
+        ctx.beginPath();ctx.ellipse(e.n.x,e.n.y+1,9,4,0,0,Math.PI*2);
+        ctx.strokeStyle='#ffe199';ctx.lineWidth=1;ctx.stroke();
+      }
+      drawNPC(e.n);
+    }
     else if(e.k==='kid'){const k=e.n.kid;ctx.save();ctx.translate(k.x,k.y);ctx.scale(.62,.62);ctx.translate(-k.x,-k.y);drawNPC(k);ctx.restore()}
     else if(e.k==='chick')drawChicken(e.c);
     else if(e.k==='pet')drawPet(e.n);
@@ -1728,7 +1737,7 @@ function render(){
   drawDistrictsLive();
   const fs=Math.round(clamp(z*3.6,10,14)),showAll=z>=1.6;
   ctx.textAlign='center';ctx.textBaseline='middle';
-  for(const e of list){if(e.k!=='n')continue;const n=e.n;if(!showAll&&follow!==n.id&&!n.bubble)continue;
+  for(const e of list){if(e.k!=='n'||REC?.groupWelcome||WELCOME_PREVIEW)continue;const n=e.n;if(!showAll&&follow!==n.id&&!n.bubble)continue;
     const sx=(n.x-cam.x)*z+cw/2,sy=(n.y-cam.y)*z+ch/2;if(sx<-80||sx>cw+80||sy<-60||sy>ch+60)continue;
     const top=sy-(n.sleeping?10:26)*z;
     ctx.font=`600 ${fs}px "Pixelify Sans",sans-serif`;const label=(n.vip?'👑 ':'')+(n.mayor?'🎖️ ':'')+(resNum(n)<=100?'🌱':'')+profIcon(n)+' '+n.name+(n.fan?' 💬':'');const tw=ctx.measureText(label).width+10;
@@ -2452,7 +2461,7 @@ function welcomeQueueRender(){
  el.querySelectorAll('[data-wremove]').forEach(b=>b.onclick=()=>{WELCOME_QUEUE.splice(Number(b.dataset.wremove),1);welcomeQueueRender()});
  if($('stWelcomeCount')){
   let style=$('stWelcomeStyle')?.value||'auto';if(style==='auto')style=WELCOME_QUEUE.length>=5?'group':'individual';
-  const seconds=style==='individual'?9+WELCOME_QUEUE.length*ARRIVALS.seconds+4:4+welcomeGroupDuration(WELCOME_QUEUE.length,style==='express');
+  const seconds=style==='individual'?9+WELCOME_QUEUE.length*ARRIVALS.seconds+2+LIVING_INVITE_SECONDS:welcomeGroupTiming(WELCOME_QUEUE.length,style==='express').cta+LIVING_INVITE_SECONDS;
   $('stWelcomeCount').textContent=WELCOME_QUEUE.length+' moradores · aproximadamente '+seconds+' segundos ('+(style==='individual'?'individual':style==='express'?'expressa':'em grupo')+')';
  }
 }
@@ -2481,16 +2490,7 @@ function welcomeStartBatch(){
  startRec(false);
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;for(const n of added)removeNPC(n.id);return}
  if(group){
-  const express=style==='express',intro=4,celebrate=intro+5+(express?Math.ceil(added.length/5)*2:added.length*2),cta=celebrate+4;
-  const cols=Math.min(7,Math.max(2,Math.ceil(Math.sqrt(added.length))));
-  const members=added.map((n,i)=>{
-   const row=Math.floor(i/cols),col=i%cols,entry=arrivalTile();
-   const x=entry.x*T+8+(col-(cols-1)/2)*12,y=entry.y*T+12+row*10;
-   const tx=(CX+(col-(cols-1)/2)*.85)*T+8,ty=(CY+2+row*.85)*T+8;
-   n.x=x;n.y=y;n.moving=false;n.dir='up';
-   return {id:n.id,name:n.name,x,y,tx,ty};
-  });
-  REC.groupWelcome={members,intro,celebrate,cta,express};
+  REC.groupWelcome=createWelcomeGroup(added,style==='express',REC.c.width/REC.c.height);
   REC.arrivalId=null;REC.arrivalScene=null;REC.welcomeIntro=0;REC.story=null;
   follow=null;pinnedFollow=false;TOUR=null;
  }
@@ -2645,7 +2645,7 @@ function recFrame(now){
   }
   if(STUDIO.captions&&REC.studioMode!=='invitation'){
     const voting=REC.vote&&(!REC.customStudio||hAge>=REC.vote.start&&hAge<REC.vote.start+REC.vote.visualSeconds);
-    if(REC.groupWelcome)drawWelcomeGroup(g,W2,H2,hAge);
+    if(REC.groupWelcome)drawWelcomeGroup(g,W2,H2,hAge,REC.groupWelcome);
     else if(!voting&&!tourCaption){
       if(HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.vote){
         if(!REC.hook)REC.hook=hookText(REC.hookKind);
@@ -2689,7 +2689,7 @@ function stopRec(){if(!REC||REC.stopping)return;REC.stopping=true;$('recBtn').st
   if(showInvite)REC.inviteAt=performance.now();
   const tail=Math.max(REC.ext==='mp4'?3500:900,showInvite?LIVING_INVITE_SECONDS*1000:0);
   // grava um pouquinho a mais: o gravador do celular perde o finalzinho do vídeo ao parar
-  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const m of R0.groupWelcome.members){const n=npcs.find(n=>n.id===m.id);if(n){n.arrivalJump=0;n.moving=false;n.status='Novo morador'}}save();refreshPanel(true)}$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},tail)}
+  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const {resident:n} of R0.groupWelcome.members){n.arrivalJump=0;n.moving=false;n.status='Novo morador';n.plan=[goNear(CX,CY,3)]}save();refreshPanel(true)}$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},tail)}
 // ===== corrige a duração do vídeo (MediaRecorder grava sem duração → YouTube mostra 0s) =====
 // mede a duração real gravada dentro do arquivo (em ms), em vez de usar o relógio
 function mp4MediaMs(buf){
@@ -2791,50 +2791,131 @@ async function finishRec(R0){
 }
 const ARRIVALS={ids:[],index:0,active:false,seconds:20};
 let WELCOME_STYLE='auto';
-function welcomeGroupDuration(count,express=false){return express?17:13+count*2}
+let WELCOME_PREVIEW=null;
+const WELCOME_BATCH_SIZE=5,WELCOME_SPOTLIGHT_SECONDS=2;
+function welcomeGroupTiming(count,express){
+ const walkEnd=6;
+ const slots=express?Math.ceil(count/WELCOME_BATCH_SIZE):count;
+ const celebrate=walkEnd+slots*WELCOME_SPOTLIGHT_SECONDS;
+ return {walkEnd,celebrate,cta:celebrate+4};
+}
+function createWelcomeGroup(residents,express,ratio){
+ const count=residents.length,entry=arrivalTile();
+ const cols=Math.min(7,Math.ceil(Math.sqrt(count))),rows=Math.ceil(count/cols);
+ const members=residents.map((resident,i)=>{
+  const row=Math.floor(i/cols),rowSize=Math.min(cols,count-row*cols);
+  const offset=i%cols-(rowSize-1)/2;
+  const x=entry.x*T+8+offset*9,y=entry.y*T+12+row*10;
+  const tx=CX*T+8+offset*16,ty=(CY+2)*T+8+row*15;
+  Object.assign(resident,{x,y,moving:false,dir:'up'});
+  return {resident,x,y,tx,ty};
+ });
+ const viewW=Math.min(cw,ch*ratio),viewH=viewW/ratio;
+ const wideZoom=Math.min(3,viewW*.82/((cols-1)*16+44),viewH*.62/((rows-1)*15+60));
+ cam.x=entry.x*T+8;cam.y=entry.y*T+(rows-1)*5;cam.z=wideZoom;
+ clampCam();
+ return {members,...welcomeGroupTiming(count,express),express,wideZoom};
+}
+function welcomeSpotlight(group,age){
+ if(age<group.walkEnd||age>=group.celebrate)return -1;
+ return Math.floor((age-group.walkEnd)/WELCOME_SPOTLIGHT_SECONDS);
+}
 function welcomeGroupTick(now){
- const R=REC;if(!R||!R.groupWelcome)return;
- const G=R.groupWelcome,age=(now-R.start)/1000,walkStart=G.intro,walkEnd=walkStart+5;
- const walk=clamp((age-walkStart)/5,0,1);
- const cx=CX*T+8,cy=CY*T+8;
- if(age>=walkStart){
-  for(let i=0;i<G.members.length;i++){
-   const m=G.members[i],n=npcs.find(n=>n.id===m.id);if(!n)continue;
-   const t=clamp((walk-i*.025)/.9,0,1);
+ const R=WELCOME_PREVIEW||REC;if(!R?.groupWelcome)return;
+ const G=R.groupWelcome,age=(now-R.start)/1000,slot=welcomeSpotlight(G,age);
+ const walk=clamp(age/G.walkEnd,0,1);
+ let focusX=0,focusY=0;
+ for(const [i,m] of G.members.entries()){
+   const n=m.resident,delay=.23*i/Math.max(1,G.members.length-1);
+   const t=clamp((walk-delay)/(1-delay),0,1);
    n.x=m.x+(m.tx-m.x)*t;n.y=m.y+(m.ty-m.y)*t;
-   n.moving=t>0&&t<1;n.dir=t>=1?'down':'up';
+   n.moving=t>0&&t<1;n.dir=t>=1?'down':m.ty>m.y?'down':'up';
    n.walkT=(n.walkT||0)+Math.hypot(n.x-(m.lastX??n.x),n.y-(m.lastY??n.y))/8;
    m.lastX=n.x;m.lastY=n.y;
-   if(t>=1){n.moving=false;n.dir='down'}
-   n.arrivalJump=age>=G.celebrate&&age<G.celebrate+1.2?Math.max(0,Math.sin((age-G.celebrate)*Math.PI/1.2))*9:0;
-  }
-  let focusX=cx,focusY=cy,zoom=G.express?1.85:Math.max(1.55,2.8-Math.min(1,G.members.length/12));
-  if(!G.express&&age>=walkEnd&&age<G.celebrate){
-   const idx=Math.min(G.members.length-1,Math.floor((age-walkEnd)/2)),m=G.members[idx];
-   if(m){focusX=m.tx;focusY=m.ty;zoom=3.3}
-  }
-  cam.x+=(focusX-cam.x)*.045;cam.y+=(focusY-cam.y)*.045;
-  cam.z+=(zoom-cam.z)*.045;
-  clampCam();
+   const jumpAge=age-G.celebrate-(i%WELCOME_BATCH_SIZE)*.08;
+   n.arrivalJump=jumpAge>=0&&jumpAge<1.2?Math.sin(jumpAge*Math.PI/1.2)*9:0;
+   focusX+=n.x;focusY+=n.y;
  }
- if(age>=G.cta&&!R.stopping){
-  for(const m of G.members){const n=npcs.find(n=>n.id===m.id);if(n){n.arrivalJump=0;n.moving=false;n.status='Novo morador';n.plan=[goNear(CX,CY,3)]}}
-  stopRec();
+ focusX/=G.members.length;focusY=focusY/G.members.length-12;
+ let zoom=G.wideZoom;
+ if(!G.express&&slot>=0){
+  const n=G.members[slot].resident;
+  focusX=n.x;focusY=n.y-14;zoom=6;
  }
+ // Corta junto com a troca do card para manter o morador certo em destaque.
+ const ease=!G.express&&slot!==G.lastSlot?1:.10;
+ cam.x+=(focusX-cam.x)*ease;cam.y+=(focusY-cam.y)*ease;cam.z+=(zoom-cam.z)*ease;
+ G.lastSlot=slot;
+ clampCam();
+ if(age>=G.celebrate&&!G.celebrated&&!R.stopping){
+  G.celebrated=true;
+  confetti(focusX,focusY);
+  sfx('fanfare');
+ }
+ if(age>=G.cta&&R===REC&&!R.stopping)stopRec();
 }
-function drawWelcomeGroup(g,w,h,age){
- const G=REC?.groupWelcome;if(!G)return;
- if(age<G.intro){pxDrawStoryText(g,w,h,'Hoje a Pixelândia vai receber '+G.members.length+' novos moradores!');return}
- const local=age-G.intro;
- if(local<5){pxDrawStoryText(g,w,h,G.members.length+' novos moradores estão chegando à Pixelândia!');return}
- if(age<G.celebrate){
-  const idx=G.express?Math.floor((local-5)/2)*5:Math.floor((local-5)/2);
-  const names=G.express?G.members.slice(idx,idx+5).map(m=>m.name).join('  ·  '):G.members[idx]?.name;
-  if(!names)return;
-  const resident=G.express?null:npcs.find(n=>n.id===G.members[idx].id);
-  drawVideoCard(g,w,h,{title:names,sub:resident?profLabel(resident):'',at:STUDIO.hud?.42:.20});return;
+function drawWelcomeGroup(g,w,h,age,G){
+ if(age<G.walkEnd){
+  const title=G.members.length===1?'Tem gente nova na vila!':G.members.length+' novos moradores na estrada!';
+  drawVideoCard(g,w,h,{title,kind:'story',alpha:clamp(age/.30,0,1)});return;
+ }
+ const slot=welcomeSpotlight(G,age);
+ if(slot>=0){
+  if(G.express){
+   const start=slot*WELCOME_BATCH_SIZE;
+   const title=G.members.slice(start,start+WELCOME_BATCH_SIZE).map(m=>m.resident.name).join(' · ');
+   drawVideoCard(g,w,h,{title,at:.78});return;
+  }
+  const n=G.members[slot].resident;
+  const batch=Math.floor(slot/WELCOME_BATCH_SIZE)+1,total=Math.ceil(G.members.length/WELCOME_BATCH_SIZE);
+  const label=total>1?`Turma ${batch} de ${total}`:'';
+  drawVideoCard(g,w,h,{title:n.name,sub:profLabel(n),label,at:.78});return;
  }
  pxDrawStoryText(g,w,h,'A partir de hoje, esta vila também é de vocês.');
+}
+function welcomeGroupPreview(){
+ const count=WELCOME_QUEUE.length;
+ if(!count){alert('Adicione pelo menos um morador à lista.');return}
+ const style=$('stWelcomeStyle').value;
+ if($('stScriptMode').checked||style==='individual'||(style==='auto'&&count<5)){
+  alert('A prévia da fila está disponível para chegadas em grupo e expressas.');return;
+ }
+ const previous={cam:{...cam},follow,pinnedFollow,followUntil,TOUR};
+ follow=null;pinnedFollow=false;TOUR=null;
+ const horizontal=STUDIO.format==='horizontal',w=horizontal?960:540,h=horizontal?540:960;
+ const residents=WELCOME_QUEUE.map((d,i)=>{
+  const n=makeNPC(d.name,d.prof,d.sex,d.custom,-1-i);
+  npcColors(n);
+  return n;
+ });
+ const groupWelcome=createWelcomeGroup(residents,style==='express',w/h);
+ closeModal();
+ const layer=document.createElement('div');
+ layer.style.cssText='position:fixed;inset:0;z-index:10050;background:#101b12;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:12px;box-sizing:border-box';
+ layer.innerHTML='<strong style="color:white">🎬 PRÉVIA DAS BOAS-VINDAS</strong><canvas style="display:block;max-width:100%;max-height:72vh;object-fit:contain;border:3px solid #e9b768;border-radius:12px"></canvas><button class="btn" type="button">↩️ Voltar ao Estúdio</button>';
+ document.body.appendChild(layer);
+ const canvas=layer.querySelector('canvas');canvas.width=w;canvas.height=h;
+ const g=canvas.getContext('2d');
+ const preview={groupWelcome,start:performance.now(),raf:0};
+ WELCOME_PREVIEW=preview;
+ function stop(){
+  cancelAnimationFrame(preview.raf);WELCOME_PREVIEW=null;layer.remove();
+  Object.assign(cam,previous.cam);
+  ({follow,pinnedFollow,followUntil,TOUR}=previous);
+  openRecMenu();
+ }
+ function tick(now){
+  if(WELCOME_PREVIEW!==preview)return;
+  const age=(now-preview.start)/1000;
+  const sw=cv.width,sh=cv.height,cropW=Math.min(sw,sh*w/h),cropH=cropW*h/w;
+  g.drawImage(cv,(sw-cropW)/2,(sh-cropH)/2,cropW,cropH,0,0,w,h);
+  if(age>=groupWelcome.cta)drawLivingInvite(g,w,h,age-groupWelcome.cta);
+  else if(STUDIO.captions)drawWelcomeGroup(g,w,h,age,groupWelcome);
+  if(age>=groupWelcome.cta+LIVING_INVITE_SECONDS)stop();
+  else preview.raf=requestAnimationFrame(tick);
+ }
+ layer.querySelector('button').onclick=stop;
+ preview.raf=requestAnimationFrame(tick);
 }
 
 const WELCOME_QUEUE=[];
@@ -3037,7 +3118,7 @@ function openRecMenu(){
    <label>Personagem</label><select class="in" id="stNewSex"><option value="m">Masculino</option><option value="f">Feminino</option></select>
    <label>@ do inscrito (opcional)</label><input class="in" id="stNewHandle" maxlength="40" placeholder="Ex.: @heitor" autocomplete="off">
    <label>Animal de estimação (opcional)</label><select class="in" id="stNewPet"><option value="">Nenhum</option><option value="dog">🐶 Cachorro</option><option value="cat">🐱 Gato</option></select>
-   <label>Tipo de chegada</label><select class="in" id="stWelcomeStyle"><option value="auto">✨ Automático (5 ou mais: grupo)</option><option value="individual">👤 Individual — apresentação completa</option><option value="group">👥 Em grupo — 2 segundos por nome</option><option value="express">⚡ Expressa — 5 nomes por tela</option></select>
+   <label>Tipo de chegada</label><select class="in" id="stWelcomeStyle"><option value="auto">✨ Automático (5 ou mais: grupo)</option><option value="individual">👤 Individual — apresentação completa</option><option value="group">👥 Em grupo — close de 2 segundos por morador</option><option value="express">⚡ Expressa — 5 nomes por tela</option></select>
    <label>Duração de cada chegada</label><select class="in" id="stSeconds"><option value="12">12 segundos</option><option value="18">18 segundos</option><option value="20">20 segundos</option><option value="25">25 segundos</option><option value="40">40 segundos</option></select>
    <button type="button" class="btn big" id="stQueueAdd">➕ Adicionar à lista do vídeo</button><div class="bgrp">👥 Moradores deste episódio (em ordem)</div><div id="stWelcomeQueue"></div><p id="stWelcomeCount" class="tip"></p>
  <div class="bgrp">📝 Roteiro do episódio</div><label><input type="checkbox" id="stScriptMode"> Roteiro personalizado</label>
@@ -3087,7 +3168,7 @@ function openRecMenu(){
  if(mode==='event'){startRecEvent(STUDIO.event,eventScenes)}else{startRec(mode==='welcome'?false:STUDIO.camera==='auto'&&mode!=='free');if(REC&&mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}}}
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;}
  };
- $('stPreview').onclick=()=>{if(STUDIO.mode==='vote'){const opts=voteReadOptions();if(opts){STUDIO.voteOptions=opts;votePreview(opts,STUDIO.voteSeconds)}return;}if(STUDIO.mode==='invitation'){INVITE_PREVIEW_CAM={x:cam.x,y:cam.y,z:cam.z};INVITE_PREVIEW_FOLLOW=follow;INVITE_PREVIEW_PIN=pinnedFollow;invitePreview();return}if(STUDIO.mode==='welcome'){alert('Adicione os moradores à lista e inicie a gravação para ver a sequência completa.');return}closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
+ $('stPreview').onclick=()=>{if(STUDIO.mode==='vote'){const opts=voteReadOptions();if(opts){STUDIO.voteOptions=opts;votePreview(opts,STUDIO.voteSeconds)}return;}if(STUDIO.mode==='invitation'){INVITE_PREVIEW_CAM={x:cam.x,y:cam.y,z:cam.z};INVITE_PREVIEW_FOLLOW=follow;INVITE_PREVIEW_PIN=pinnedFollow;invitePreview();return}if(STUDIO.mode==='welcome'){welcomeGroupPreview();return}closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
 }
 
 // ================== BAIRROS ==================
