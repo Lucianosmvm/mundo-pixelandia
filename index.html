@@ -2338,15 +2338,15 @@ function drawArrivalTag(g,W2,H2,s,n,age){
   const enter=clamp(age/.35,0,1),leave=clamp((5.1-age)/.55,0,1),alpha=Math.min(enter,leave);
   if(alpha<=0)return;
   const pad=13*s,bw=Math.min(W2*.66,360*s),bh=76*s;
-  const x=22*s-(1-enter)*30*s,y=H2*.135;
+  const x=(W2-bw)/2,y=H2*.135;
   g.save();g.globalAlpha=alpha;
   g.fillStyle='rgba(255,242,205,.94)';rr(g,x,y,bw,bh,10*s);g.fill();
   g.lineWidth=3*s;g.strokeStyle='#75401e';g.stroke();
-  g.textAlign='left';g.textBaseline='middle';
+  g.textAlign='center';g.textBaseline='middle';
   g.fillStyle='#38210f';g.font=`700 ${24*s}px "Pixelify Sans",sans-serif`;
-  g.fillText('🎉 '+n.name+' chegou!',x+pad,y+28*s,bw-2*pad);
+  g.fillText('🎉 '+n.name+' chegou!',W2/2,y+28*s,bw-2*pad);
   g.fillStyle='#8b4a1f';g.font=`600 ${18*s}px "Pixelify Sans",sans-serif`;
-  g.fillText(profLabel(n)+(n.youtubeHandle?' · '+n.youtubeHandle:''),x+pad,y+55*s,bw-2*pad);
+  g.fillText(profLabel(n)+(n.youtubeHandle?' · '+n.youtubeHandle:''),W2/2,y+55*s,bw-2*pad);
   g.restore();
 }
 function drawShortsCTA(g,W2,H2,s,age,duration){
