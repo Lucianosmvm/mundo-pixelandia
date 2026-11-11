@@ -1670,7 +1670,7 @@ function render(){
   }
   drawNatureWater();drawVehiclesWater(lights);drawTrains();
   for(const b of buildings){if(b.x+b.w<x0-7||b.x>x1+1||b.y>y1+10||b.y+b.h<y0)continue;list.push({y:(b.y+b.h)*T,k:'b',b})}
-  for(const n of npcs){if(!n.active||n.inside)continue;const tx=n.x/T,ty=n.y/T;if(tx<x0-1||tx>x1+1||ty<y0-1||ty>y1+2)continue;list.push({y:n.y,k:'n',n});if(n.kid&&!n.sleeping)list.push({y:n.kid.y,k:'kid',n});if(n.pet&&n.petO)list.push({y:n.petO.y,k:'pet',n})}
+  for(const n of npcs){if(!n.active||n.inside||(REC&&REC.arrivalId&&ARRIVALS.active&&ARRIVALS.ids.includes(n.id)&&ARRIVALS.ids.indexOf(n.id)>ARRIVALS.index))continue;const tx=n.x/T,ty=n.y/T;if(tx<x0-1||tx>x1+1||ty<y0-1||ty>y1+2)continue;list.push({y:n.y,k:'n',n});if(n.kid&&!n.sleeping)list.push({y:n.kid.y,k:'kid',n});if(n.pet&&n.petO)list.push({y:n.petO.y,k:'pet',n})}
   for(const a of WILD)list.push({y:a.y,k:'wild',a});
   for(const c of EV.chickens)list.push({y:c.y,k:'chick',c});
   if(EV.snow>0)list.push({y:(CY-1)*T+15,k:'xmas'});
@@ -1763,7 +1763,7 @@ function frame(now){
   const dt=Math.min(0.05,Math.max(0,(now-last)/1000));last=now;gtime+=dt;
   const steps=timeScale,sub=dt;
   audioTick(dt);
-  for(let k=0;k<steps;k++){updateEvents(sub);updateVehicles(sub);worldTick(sub);for(const n of npcs)if(n.active&&!(REC&&REC.arrivalId===n.id)&&!(ARRIVAL_PREVIEW&&ARRIVAL_PREVIEW.id===n.id))updateNPC(n,sub)}
+  for(let k=0;k<steps;k++){updateEvents(sub);updateVehicles(sub);worldTick(sub);for(const n of npcs)if(n.active&&!(REC&&REC.arrivalId&&ARRIVALS.active&&ARRIVALS.ids.includes(n.id)&&ARRIVALS.ids.indexOf(n.id)>=ARRIVALS.index)&&!(ARRIVAL_PREVIEW&&ARRIVAL_PREVIEW.id===n.id))updateNPC(n,sub)}
   updateAmbient(dt);
   arrivalSceneTick(now,dt);
   tourTick(dt);
@@ -2537,7 +2537,7 @@ function recFrame(now){
   if(REC.inviteSeconds){inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.inviteSeconds&&!REC.stopping)stopRec()}
   if(REC.arrivalId){
     const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-(REC.arrivalStart||REC.start))/1000;
-    if(n&&STUDIO.captions){drawArrivalTag(g,W2,H2,s,n,age);drawShortsCTA(g,W2,H2,s,age,REC.arrivalSeconds)}
+    if(n&&STUDIO.captions){drawArrivalTag(g,W2,H2,s,n,age);(ARRIVALS.index===ARRIVALS.ids.length-1&&age>=REC.arrivalSeconds?drawShortsCTA(g,W2,H2,s,age-REC.arrivalSeconds,4):null)}
     if(age>=REC.arrivalSeconds&&!REC.stopping){
       if(ARRIVALS.index+1<ARRIVALS.ids.length){
         finishArrivalScene({arrivalScene:REC.arrivalScene});
