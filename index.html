@@ -2499,7 +2499,7 @@ function pxStoryText(){
 }
 function pxStoryOverlay(g,w,h,age){
  if(!STUDIO.captions||!REC)return;
- if(REC.arrivalId&&ARRIVALS.active&&ARRIVALS.index===ARRIVALS.ids.length-1&&(performance.now()-REC.arrivalStart)/1000>=REC.arrivalSeconds)return;
+ if(REC.arrivalId&&ARRIVALS.active&&ARRIVALS.index===ARRIVALS.ids.length-1&&(performance.now()-REC.arrivalStart)/1000>=REC.arrivalSeconds+(REC.customWelcome?REC.customWelcome.ending-4:0))return;
  const parts=REC.story||(REC.story=pxStoryText());
  const total=REC.arrivalSeconds||REC.vote?.seconds||REC.inviteSeconds|| (REC.studioMode==='event'?45:REC.studioMode==='resident'?60:REC.studioMode==='episode'?90:45);
  const index=Math.min(parts.length-1,Math.floor(age/Math.max(1,total/parts.length)));
@@ -2508,7 +2508,16 @@ function pxStoryOverlay(g,w,h,age){
   const i=ARRIVALS.index,n=npcs.find(x=>x.id===REC.arrivalId),count=ARRIVALS.ids.length;
   const intro=REC.welcomeIntro||0,local=age-((REC.arrivalStart-REC.start)/1000);
   const before=REC.welcomeBefore??Math.max(0,npcs.length-count),homes=REC.welcomeBuildings??0;
-  if(age<intro){
+  if(REC.customWelcome&&age<intro){
+    const lines=REC.customWelcome.intro;
+    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(age/Math.max(1,intro)*lines.length))]:'Hoje a vila vai receber novos moradores!';
+  }else if(REC.customWelcome&&local>=REC.arrivalSeconds&&i===count-1){
+    const lines=REC.customWelcome.outro,endAge=local-REC.arrivalSeconds;
+    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(endAge/Math.max(1,REC.customWelcome.ending-4)*lines.length))]:'';
+  }else if(REC.customWelcome&&n&&age>=intro){
+    const lines=REC.customWelcome.entries[i].lines;
+    msg=lines.length?lines[Math.min(lines.length-1,Math.floor(Math.max(0,local)/Math.max(1,REC.arrivalSeconds)*lines.length))]:'Chegou '+n.name+'!';
+  }else if(age<intro){
     const scene=before===0
       ?'Até agora, nossa vila estava esperando seus primeiros habitantes...'
       :before===1?'Nossa vila começou com apenas um morador, mas já tem muita história para contar!'
@@ -2573,7 +2582,7 @@ function recFrame(now){
         ARRIVALS.index++;REC.arrivalId=ARRIVALS.ids[ARRIVALS.index];REC.arrivalStart=now;
         const next=npcs.find(x=>x.id===REC.arrivalId);
         if(next){next.status='Chegando à vila';REC.arrivalScene=shortsSceneFor(next,now,REC.arrivalSeconds)}
-      }else if(age>=REC.arrivalSeconds+4)stopRec();
+      }else if(age>=REC.arrivalSeconds+(REC.customWelcome?.ending||4))stopRec();
     }
   }
   if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
@@ -2581,7 +2590,7 @@ function recFrame(now){
   // No encerramento, esconder a legenda narrativa e manter o convite por cima.
   if(REC&&REC.arrivalId&&STUDIO.captions&&ARRIVALS.index===ARRIVALS.ids.length-1){
     const finalAge=(now-REC.arrivalStart)/1000-REC.arrivalSeconds;
-    if(finalAge>=0)drawShortsCTA(g,W2,H2,s,finalAge,4);
+    if(finalAge>=(REC.customWelcome?REC.customWelcome.ending-4:0))drawShortsCTA(g,W2,H2,s,finalAge-(REC.customWelcome?REC.customWelcome.ending-4:0),4);
   }
   // marca d'água
   if(STUDIO.captions){g.textAlign='center';g.textBaseline='middle';g.font=`700 ${28*s}px "Pixelify Sans",sans-serif`;g.lineWidth=6*s;g.strokeStyle='rgba(30,18,8,.8)';
