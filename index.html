@@ -2286,7 +2286,12 @@ function arrivalSceneTick(now,dt){
   if(!director||!director.arrivalScene)return;
   const sc=director.arrivalScene,n=npcs.find(m=>m.id===sc.id);if(!n)return;
   const age=(now-director.start)/1000;
-  const walk=clamp((age-1.3)/Math.max(3,director.arrivalSeconds-5.8),0,1);
+  // Reserva tempo no final: parar, olhar para a câmera, saltar e só então encerrar.
+  const duration=director.arrivalSeconds;
+  const arrivalAt=Math.max(3,duration-5.7);
+  const faceUntil=arrivalAt+1.15;
+  const jumpUntil=faceUntil+1.2;
+  const walk=clamp((age-1.3)/Math.max(1.5,arrivalAt-1.3),0,1);
   if(STUDIO.music&&REC&&director===REC&&sc.musicStep!==Math.floor(age/5)&&age<director.arrivalSeconds-2){sc.musicStep=Math.floor(age/5);sfx('tune')}
   const route=sc.route||[{x:sc.fromX,y:sc.fromY}];
   if(route.length>1){
@@ -2305,9 +2310,17 @@ function arrivalSceneTick(now,dt){
   const moved=Math.hypot(n.x-(sc.lastX??n.x),n.y-(sc.lastY??n.y));
   n.walkT+=Math.min(moved,16)/8;
   sc.lastX=n.x;sc.lastY=n.y;
-  if(walk>=1&&!sc.celebrated){sc.celebrated=true;n.moving=false;n.dir='down';n.arrivalJump=1.15;sfx('fanfare');confetti(n.x,n.y-14);floatTxt(n.x,n.y-28,'Bem-vindo(a)!')}
-  // Olha para a câmera (frente) e dá um pulinho ao chegar à praça.
-  if(sc.celebrated){n.dir='down';n.moving=false;if(n.arrivalJump>0)n.arrivalJump=Math.max(0,n.arrivalJump-dt)}
+  if(walk>=1&&!sc.celebrated){
+    sc.celebrated=true;n.moving=false;n.dir='down';n.arrivalJump=0;
+    // Um instante olhando diretamente para o espectador antes da comemoração.
+  }
+  if(sc.celebrated){
+    n.dir='down';n.moving=false;
+    if(age>=faceUntil&&age<jumpUntil){
+      if(!sc.jumpStarted){sc.jumpStarted=true;sfx('fanfare');confetti(n.x,n.y-14);floatTxt(n.x,n.y-28,'Bem-vindo(a)!')}
+      n.arrivalJump=1.2-(age-faceUntil);
+    }else n.arrivalJump=0;
+  }
   // Mantém o personagem centralizado, sem legendas sobre ele.
   const cameraEase=1-Math.exp(-6*dt);
   cam.x+=(n.x-cam.x)*cameraEase;
@@ -2331,8 +2344,9 @@ function drawArrivalTag(g,W2,H2,s,n,age){
   g.restore();
 }
 function drawShortsCTA(g,W2,H2,s,age,duration){
-  if(age<duration-3.4)return;
-  const a=clamp((age-(duration-3.4))/.4,0,1),pad=18*s;
+  // Convite aparece depois do salto, sem encobrir o momento da comemoração.
+  if(age<duration-2.7)return;
+  const a=clamp((age-(duration-2.7))/.4,0,1),pad=18*s;
   g.save();g.globalAlpha=a;g.textAlign='center';g.textBaseline='middle';
   const msg='Quer morar aqui? Comente nome e profissão!';
   const w=Math.min(W2*.83,610*s),x=(W2-w)/2,y=H2*.72;
