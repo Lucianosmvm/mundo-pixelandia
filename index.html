@@ -3548,54 +3548,56 @@ function openStudioNarration(highlight,replay=null){
  }
  const cached=texts.every(text=>narration.audio.has(text));
  modal(`<h3><span>Narração com ElevenLabs</span><button class="btn sm" id="mX">Voltar</button></h3>
- <p class="tip">A chave da API ElevenLabs, a voz e o modelo ficam configurados no servidor de narração. O GitHub Pages não pode guardar sua chave com segurança.</p>
- <label for="voiceService">Endereço HTTPS do servidor de narração (não é uma página HTML)</label><input class="in" id="voiceService" type="url" placeholder="https://seu-servico.exemplo/api/narrar">
- <label for="voiceToken">Código de acesso ao seu servidor (não é a chave da ElevenLabs)</label><input class="in" id="voiceToken" type="password" autocomplete="off">
- <p class="tip">Para escolher voz e modelo diretamente aqui, será preciso conectar um servidor que aceite essas opções. Nunca cole sua chave secreta da ElevenLabs neste formulário.</p>
+ <p class="tip">🔒 Sua chave fica apenas na memória deste aparelho enquanto o app estiver aberto. Não é salva no GitHub, localStorage ou no projeto. A chave será enviada somente à API da ElevenLabs para gerar o áudio.</p>
+ <label for="voiceApiKey">Chave da API ElevenLabs</label><input class="in" id="voiceApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="Cole sua API Key">
+ <label for="voiceModel">Modelo de voz</label><select class="in" id="voiceModel"><option value="eleven_multilingual_v2">Multilingual v2 (português)</option><option value="eleven_v3">Eleven v3</option><option value="eleven_flash_v2_5">Flash v2.5 (rápido)</option></select>
+ <label for="voiceId">ID da voz</label><input class="in" id="voiceId" placeholder="Selecione uma voz ou cole o Voice ID" autocomplete="off">
+ <div class="row"><button class="btn" id="voiceList">Buscar minhas vozes</button><select class="in" id="voiceChoices" aria-label="Vozes disponíveis"><option value="">Escolha uma voz…</option></select></div>
  <details><summary>Texto dos cards</summary><ol>${texts.map(text=>'<li>'+esc(text)+'</li>').join('')}</ol></details>
  <div class="row"><button class="btn" id="voiceGenerate">Gerar narração</button><button class="btn" id="voiceUse" ${cached?'':'disabled'}>Usar no vídeo</button></div>
  <p id="voiceStatus" class="tip" aria-live="polite">${cached?'Narração pronta.':''}</p>`);
- const url=$('voiceService'),token=$('voiceToken'),generate=$('voiceGenerate'),status=$('voiceStatus'),use=$('voiceUse');
- url.value=VOTE_NARRATION.url;token.value=VOTE_NARRATION.token;
+ const apiKey=$('voiceApiKey'),model=$('voiceModel'),voiceId=$('voiceId'),choices=$('voiceChoices'),generate=$('voiceGenerate'),status=$('voiceStatus'),use=$('voiceUse');
+ apiKey.value=VOTE_NARRATION.token||'';
+ model.value=VOTE_NARRATION.model||'eleven_multilingual_v2';
+ voiceId.value=VOTE_NARRATION.voiceId||'';
  let controller;
  $('mX').onclick=()=>{controller?.abort();openRecMenu(highlight)};
- use.onclick=()=>{
-  narration.enabled=true;
-  STUDIO.captions=true;
-  openRecMenu(highlight);
+ choices.onchange=()=>{if(choices.value)voiceId.value=choices.value};
+ $('voiceList').onclick=async()=>{
+  const key=apiKey.value.trim();if(!key){status.textContent='Informe sua chave da API.';return}
+  status.textContent='Buscando vozes…';
+  try{
+   const response=await fetch('https://api.elevenlabs.io/v1/voices',{headers:{'xi-api-key':key},cache:'no-store'});
+   if(!response.ok)throw Error('Não foi possível consultar as vozes (HTTP '+response.status+').');
+   const data=await response.json();choices.replaceChildren(new Option('Escolha uma voz…',''));
+   for(const voice of data.voices||[])choices.add(new Option(voice.name||voice.voice_id,voice.voice_id));
+   status.textContent=(data.voices||[]).length+' vozes disponíveis.';
+  }catch(e){status.textContent='Falha ao buscar vozes: '+e.message+' Verifique chave, permissões e acesso do navegador.'}
  };
+ use.onclick=()=>{narration.enabled=true;STUDIO.captions=true;openRecMenu(highlight)};
  generate.onclick=async()=>{
-  let endpoint;
-  try{endpoint=new URL(url.value.trim());if(endpoint.protocol!=='https:')throw Error()}
-  catch{status.textContent='Informe a URL HTTPS do serviço.';return}
-  if(!token.value.trim()){status.textContent='Informe o código de acesso ao serviço.';return}
-  const context=audioInit();
-  if(!context){status.textContent='Este navegador não consegue preparar a faixa de áudio.';return}
-  VOTE_NARRATION.url=endpoint.href;VOTE_NARRATION.token=token.value.trim();
-  controller=new AbortController();
-  const {signal}=controller;
-  generate.disabled=true;use.disabled=true;
-  const clips=new Map();
+  const key=apiKey.value.trim(),id=voiceId.value.trim();
+  if(!key||!id){status.textContent='Informe a chave da API e selecione uma voz.';return}
+  const context=audioInit();if(!context){status.textContent='Este navegador não consegue preparar a faixa de áudio.';return}
+  VOTE_NARRATION.token=key;VOTE_NARRATION.model=model.value;VOTE_NARRATION.voiceId=id;
+  controller=new AbortController();const {signal}=controller;
+  generate.disabled=true;use.disabled=true;const clips=new Map();
   try{
    for(const [i,text] of texts.entries()){
     status.textContent=`Gerando card ${i+1} de ${texts.length}…`;
-    const response=await fetch(endpoint,{
-     method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+VOTE_NARRATION.token},
-     body:JSON.stringify({text,delivery:delivery(text)}),signal,redirect:'error'
+    const response=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+encodeURIComponent(id),{
+     method:'POST',headers:{'Content-Type':'application/json','xi-api-key':key,'Accept':'audio/mpeg'},
+     body:JSON.stringify({text,model_id:model.value}),signal,cache:'no-store'
     });
-    if(!response.ok){
-     const error=await response.json().catch(()=>null);
-     throw Error(error?.message||'O serviço não conseguiu gerar a narração.');
-    }
+    if(!response.ok){const error=await response.json().catch(()=>null);throw Error(error?.detail?.message||error?.message||'ElevenLabs retornou HTTP '+response.status)}
     clips.set(text,await context.decodeAudioData(await response.arrayBuffer()));
    }
    if(signal.aborted)return;
-   narration.audio=clips;
-   status.textContent='Narração pronta. Selecione Usar no vídeo para gravar com voz.';
-   use.disabled=false;
-  }catch(e){if(!signal.aborted){status.textContent=e.message;use.disabled=!cached}}
+   narration.audio=clips;status.textContent='Narração pronta. Toque em Usar no vídeo.';use.disabled=false;
+  }catch(e){if(!signal.aborted){status.textContent='Não foi possível gerar: '+e.message+'. Se o navegador bloquear o acesso direto, será necessário um serviço intermediário.';use.disabled=!cached}}
   finally{generate.disabled=false}
  };
+
 }
 
 function voteOptionsFields(prefix){
