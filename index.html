@@ -2777,7 +2777,8 @@ function recFrame(now){
     }
     const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-REC.arrivalStart)/1000;
     if(n&&STUDIO.captions&&age>=0){
-      if(age<REC.arrivalSeconds)drawArrivalTag(g,W2,H2,s,n,age);
+      // A narrativa já usa o cartão central: não desenhar outro cartão sobre ele.
+      if(age<REC.arrivalSeconds&&(!ARRIVALS.active||!REC.studioMode||REC.studioMode!=='welcome'))drawArrivalTag(g,W2,H2,s,n,age);
       // O convite final é desenhado após a narrativa, para não ficar encoberto.
     }
     if(age>=REC.arrivalSeconds&&!REC.stopping){
