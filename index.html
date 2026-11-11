@@ -2430,6 +2430,9 @@ function welcomeQueueRender(){
  if($('stWelcomeCount'))$('stWelcomeCount').textContent=WELCOME_QUEUE.length+' moradores · aproximadamente '+(WELCOME_QUEUE.length*ARRIVALS.seconds+4)+' segundos';
 }
 function welcomeStartBatch(){
+ const scripted=!!$('stScriptMode')?.checked;let scenes=null;
+ if(scripted){scriptSave();try{scenes=scriptParse(WELCOME_SCRIPT)}catch(e){alert(e.message);return}}
+
  if(!WELCOME_QUEUE.length){alert('Adicione pelo menos um morador à lista.');return}
  if(!canRecord()){alert('Este navegador não permite a gravação automática.');return}
  const added=[];
@@ -2440,10 +2443,19 @@ function welcomeStartBatch(){
   n.inside=false;n.sleeping=false;n.plan=[];n.step=null;n.idle=0;n.status='Aguardando chegada';n.moving=false;
   const entry=arrivalTile();n.x=entry.x*T+8;n.y=entry.y*T+12;n.dir='up';added.push(n);
  }
- ARRIVALS.ids=added.map(n=>n.id);ARRIVALS.index=0;ARRIVALS.active=true;
+ ARRIVALS.ids=scenes?scenes.filter(x=>x.type==='resident').map(x=>added.find(n=>n.name.toLowerCase()===x.name.toLowerCase()).id):added.map(n=>n.id);
+ ARRIVALS.index=0;ARRIVALS.active=true;
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  startRec(false);
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;for(const n of added)removeNPC(n.id);return}
+ if(scenes){
+  const intro=scenes.filter(x=>x.type==='village').flatMap(x=>x.lines);
+  const outro=scenes.filter(x=>x.type==='final').flatMap(x=>x.lines);
+  const entries=scenes.filter(x=>x.type==='resident');
+  REC.customWelcome={intro,outro,entries,invite:scenes.at(-1).lines,ending:Math.max(7,scriptDuration(outro,4)+4)};
+  REC.welcomeIntro=scriptDuration(intro,6);REC.arrivalStart=REC.start+REC.welcomeIntro*1000;
+  REC.arrivalSeconds=Math.max(ARRIVALS.seconds,...entries.map(x=>scriptDuration(x.lines,12)));
+ }
  WELCOME_QUEUE.length=0;save();
 }
 function shortsStartFromDraft(d){
@@ -2709,6 +2721,29 @@ async function finishRec(R0){
 }
 const ARRIVALS={ids:[],index:0,active:false,seconds:20};
 const WELCOME_QUEUE=[];
+const SCRIPT_KEY='pixelandia-welcome-script-v1';
+let WELCOME_SCRIPT='';
+try{WELCOME_SCRIPT=localStorage.getItem(SCRIPT_KEY)||''}catch(e){}
+function scriptParse(raw){
+ const scenes=[];let scene=null;
+ for(const line of raw.split('\n')){
+  const t=line.trim(),m=t.match(/^\[(CENA: VILA|CENA: FINAL|CONVITE|MORADOR: [^\]]+)\]$/i);
+  if(m){const cmd=m[1];scene={type:/^MORADOR:/i.test(cmd)?'resident':/^CONVITE/i.test(cmd)?'invite':/FINAL/i.test(cmd)?'final':'village',name:/^MORADOR:/i.test(cmd)?cmd.slice(8).trim():'',lines:[]};scenes.push(scene)}
+  else if(t&&scene)scene.lines.push(t);
+  else if(t)throw Error('Comece com [CENA: VILA].');
+ }
+ const names=scenes.filter(x=>x.type==='resident').map(x=>x.name.toLowerCase());
+ if(!scenes.length||scenes[0].type!=='village')throw Error('Comece com [CENA: VILA].');
+ if(names.length!==WELCOME_QUEUE.length||new Set(names).size!==names.length)throw Error('Inclua cada morador cadastrado uma única vez.');
+ if(names.some(n=>!WELCOME_QUEUE.some(d=>d.name.toLowerCase()===n)))throw Error('Confira os nomes dos moradores no roteiro.');
+ if(scenes.at(-1)?.type!=='invite'||scenes.filter(x=>x.type==='invite').length!==1)throw Error('[CONVITE] deve aparecer somente no final.');
+ if(scenes.some((x,i)=>x.type==='final'&&scenes.slice(i+1).some(y=>y.type==='resident')))throw Error('[CENA: FINAL] deve vir depois dos moradores.');
+ return scenes;
+}
+function scriptDuration(lines,min){return Math.max(min,lines.join(' ').length/13+2)}
+function scriptSave(){if(!$('stScriptText'))return;WELCOME_SCRIPT=$('stScriptText').value;try{localStorage.setItem(SCRIPT_KEY,WELCOME_SCRIPT)}catch(e){}}
+function scriptSample(){return '[CENA: VILA]\nHoje a nossa vila está mais alegre!\n\n'+WELCOME_QUEUE.map((d,i)=>'[MORADOR: '+d.name+']\n'+(i?'Mas não é só isso! Também chegou ':'O primeiro a chegar é ')+d.name+'!\n').join('\n')+'\n[CENA: FINAL]\nQue dia especial para a nossa vila!\n\n[CONVITE]'}
+
 let ARRIVAL_PREVIEW=null;
 const SHORTS_DRAFT={name:'Heitor',prof:'lenhador',custom:'',sex:'m',handle:'',pet:''};
 
@@ -2775,14 +2810,25 @@ function openRecMenu(){
    <label>@ do inscrito (opcional)</label><input class="in" id="stNewHandle" maxlength="40" placeholder="Ex.: @heitor" autocomplete="off">
    <label>Animal de estimação (opcional)</label><select class="in" id="stNewPet"><option value="">Nenhum</option><option value="dog">🐶 Cachorro</option><option value="cat">🐱 Gato</option></select>
    <label>Duração de cada chegada</label><select class="in" id="stSeconds"><option value="12">12 segundos</option><option value="18">18 segundos</option><option value="20">20 segundos</option><option value="25">25 segundos</option><option value="40">40 segundos</option></select>
-   <button type="button" class="btn big" id="stQueueAdd">➕ Adicionar à lista do vídeo</button><div class="bgrp">👥 Moradores deste episódio (em ordem)</div><div id="stWelcomeQueue"></div><p id="stWelcomeCount" class="tip"></p><p class="tip">Todos aparecerão em um único vídeo, um de cada vez, com nome e profissão.</p>`;
+   <button type="button" class="btn big" id="stQueueAdd">➕ Adicionar à lista do vídeo</button><div class="bgrp">👥 Moradores deste episódio (em ordem)</div><div id="stWelcomeQueue"></div><p id="stWelcomeCount" class="tip"></p>
+ <div class="bgrp">📝 Roteiro do episódio</div><label><input type="checkbox" id="stScriptMode"> Roteiro personalizado</label>
+ <div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], [MORADOR: Nome], [CENA: FINAL], [CONVITE]. A ordem determina as chegadas.</p>
+ <textarea class="in" id="stScriptText" rows="12" style="width:100%;box-sizing:border-box"></textarea>
+ <button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button>
+ <button type="button" class="btn sm" id="stScriptSave">💾 Salvar roteiro</button></div><p class="tip">Todos aparecerão em um único vídeo, um de cada vez, com nome e profissão.</p>`;
  }
  if(STUDIO.mode==='vote'){extra=`<div class="bgrp">🗳️ Votação da próxima construção</div><p class="tip">Defina três obras. O vídeo apresentará as opções numeradas e pedirá votos nos comentários. A obra vencedora será construída por você depois da votação.</p>${[0,1,2].map(i=>`<label>Opção ${i+1}</label><input class="in" id="stVote${i}" maxlength="38" placeholder="Nome da obra" value="${esc(STUDIO.voteOptions[i])}">`).join('')}<label>Duração do Short</label><select class="in" id="stVoteSeconds"><option value="20">20 segundos</option><option value="30">30 segundos</option></select><p class="tip">O vídeo não contabiliza votos automaticamente. Confira os comentários do YouTube e construa a mais votada no jogo.</p>`;}
  if(STUDIO.mode==='resident'){extra='<label>Morador em destaque</label><select class="in" id="stResident">'+(npcs.length?npcs.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join(''):'<option value="">Adicione um morador primeiro</option>')+'</select>'}
  $('stExtra').innerHTML=extra;
  if($('stNewProf')){ $('stNewName').value=SHORTS_DRAFT.name; $('stNewProf').value=SHORTS_DRAFT.prof; $('stNewSex').value=SHORTS_DRAFT.sex; $('stNewCustom').value=SHORTS_DRAFT.custom; $('stNewCustom').style.display=SHORTS_DRAFT.prof==='custom'?'block':'none'; $('stNewHandle').value=SHORTS_DRAFT.handle; $('stNewPet').value=SHORTS_DRAFT.pet; $('stNewProf').onchange=()=>{$('stNewCustom').style.display=$('stNewProf').value==='custom'?'block':'none'};$('stSeconds').value=String(ARRIVALS.seconds);$('stSeconds').onchange=()=>ARRIVALS.seconds=Number($('stSeconds').value);}
 
- if($('stQueueAdd')){$('stQueueAdd').onclick=welcomeQueueAdd;welcomeQueueRender()}
+ if($('stQueueAdd')){
+  $('stQueueAdd').onclick=welcomeQueueAdd;welcomeQueueRender();
+  $('stScriptMode').onchange=()=>$('stScriptArea').style.display=$('stScriptMode').checked?'block':'none';
+  $('stScriptText').value=WELCOME_SCRIPT;$('stScriptText').oninput=scriptSave;
+  $('stScriptSave').onclick=()=>{scriptSave();alert('Roteiro salvo neste aparelho!')};
+  $('stScriptExample').onclick=()=>{if(!WELCOME_QUEUE.length){alert('Adicione os moradores primeiro.');return}if($('stScriptText').value.trim()&&!confirm('Substituir o texto atual?'))return;$('stScriptText').value=scriptSample();scriptSave()};
+ }
  if($('stVoteSeconds')){$('stVoteSeconds').value=String(STUDIO.voteSeconds);$('stVoteSeconds').onchange=()=>STUDIO.voteSeconds=Number($('stVoteSeconds').value);for(let i=0;i<3;i++)$('stVote'+i).oninput=e=>STUDIO.voteOptions[i]=e.target.value;}
  if($('stEvent')){$('stEvent').value=STUDIO.event;$('stEvent').onchange=e=>STUDIO.event=e.target.value}if($('stResident')){$('stResident').value=STUDIO.resident||String(npcs[0]?.id||'');STUDIO.resident=$('stResident').value;$('stResident').onchange=e=>STUDIO.resident=e.target.value}
  function updateSummary(){$('stSummary').textContent=`${STUDIO.format==='horizontal'?'YouTube 16:9':'Shorts 9:16'} · ${STUDIO.camera==='auto'?'câmera automática':STUDIO.camera==='manual'?'câmera manual':'câmera fixa'} · ${STUDIO.captions?'com':'sem'} legendas${STUDIO.mode==='welcome'?' · cadastro e chegada real de novo morador':STUDIO.mode==='invitation'?' · convite de 25s para mundo vazio':''}`;}updateSummary();
