@@ -2451,12 +2451,13 @@ function recFrame(now){
   g.fillStyle='rgba(255,255,255,.2)';g.fillRect(48*s,HY+96*s,W2-96*s,7*s);g.fillStyle='#f6c344';g.fillRect(48*s,HY+96*s,(W2-96*s)*pct,7*s);
   }
   // anúncio
-  if(STUDIO.captions&&ANN&&!REC.arrivalId&&!REC.inviteSeconds&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
+  if(STUDIO.captions&&ANN&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
     g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;const tw=Math.min(W2-60*s,Math.max(g.measureText(ANN.t).width,(g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`,g.measureText(ANN.s).width))+60*s);
     g.fillStyle='#f7e2b5';rr(g,-tw/2,-62*s,tw,124*s,16*s);g.fill();g.lineWidth=6*s;g.strokeStyle='#8b4a1f';g.stroke();g.textAlign='center';g.fillStyle='#3b2412';g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.t,0,-16*s,tw-30*s);
     g.fillStyle='#8b4a1f';g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.s,0,32*s,tw-30*s);g.restore()}}
   const hAge=(now-REC.start)/1000;
-  if(STUDIO.captions&&TOUR&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
+  if(STUDIO.captions&&TOUR&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
+  if(REC.vote){drawVoteOverlay(g,W2,H2,hAge,REC.vote.options,REC.vote.seconds);if(STUDIO.music&&Math.floor(hAge/5)!==REC.vote.musicStep&&hAge<REC.vote.seconds-2){REC.vote.musicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.vote.seconds&&!REC.stopping)stopRec()}
   if(REC.inviteSeconds){inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.inviteSeconds&&!REC.stopping)stopRec()}
   if(REC.arrivalId){
     const n=npcs.find(x=>x.id===REC.arrivalId),age=(now-REC.start)/1000;
@@ -2471,7 +2472,7 @@ function recFrame(now){
     const lim={rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[e.k]||60;
     if((e.seen&&!on&&!e.end)){e.end=now}if((e.end&&now-e.end>3500)||el2>lim){stopRec();return}}
   const el=(now-REC.start)/1000;$('recBtn').textContent=`⏹ Parar ${Math.floor(el/60)}:${String(Math.floor(el%60)).padStart(2,'0')}`;
-  if(!REC.arrivalId&&!REC.inviteSeconds&&el>(STUDIO.mode==='episode'?900:STUDIO.mode==='resident'?300:STUDIO.mode==='free'?600:180))stopRec();
+  if(!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&el>(STUDIO.mode==='episode'?900:STUDIO.mode==='resident'?300:STUDIO.mode==='free'?600:180))stopRec();
 }
 function canRecord(){return !!(cv.captureStream&&window.MediaRecorder)}
 function startRecEvent(k){startRec(false);if(!REC)return;REC.hookKind=k;REC.hook=hookText(k);REC.ev={k,t0:performance.now(),seen:false};setTimeout(()=>{if(REC&&REC.ev)startEvent(k)},1500)}
@@ -2596,9 +2597,44 @@ async function finishRec(R0){
 const ARRIVALS={ids:[],index:0,active:false,seconds:20};
 let ARRIVAL_PREVIEW=null;
 const SHORTS_DRAFT={name:'Heitor',prof:'lenhador',custom:'',sex:'m',handle:'',pet:''};
-const STUDIO={mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party'};
+
+function voteReadOptions(){
+ const opts=[0,1,2].map(i=>($('stVote'+i)?.value||'').trim());
+ if(opts.some(v=>!v)){alert('Preencha as três obras antes de gerar o vídeo.');return null}
+ if(new Set(opts.map(v=>v.toLocaleLowerCase('pt-BR'))).size!==3){alert('Escolha três obras diferentes.');return null}
+ return opts;
+}
+function drawVoteOverlay(g,w,h,age,options,duration){
+ const s=w/720,center=w/2;
+ const card=(x,y,bw,bh)=>{g.save();g.shadowColor='rgba(0,0,0,.42)';g.shadowBlur=13*s;g.shadowOffsetY=5*s;g.fillStyle='#5e2f10';rr(g,x-5*s,y-5*s,bw+10*s,bh+10*s,14*s);g.fill();g.shadowColor='transparent';g.shadowBlur=0;g.shadowOffsetY=0;g.fillStyle='#f7e2b5';rr(g,x,y,bw,bh,10*s);g.fill();g.strokeStyle='#c99a5b';g.lineWidth=3*s;rr(g,x+6*s,y+6*s,bw-12*s,bh-12*s,7*s);g.stroke();g.restore()};
+ g.save();g.textAlign='center';g.textBaseline='middle';
+ const bw=Math.min(w*.87,640*s),x=(w-bw)/2;
+ if(age<3){
+   const a=clamp(age/.35,0,1);g.globalAlpha=a;card(x,h*.23,bw,170*s);
+   g.fillStyle='#3b2412';g.font=`700 ${38*s}px "Pixelify Sans",sans-serif`;g.fillText('🗳️ VOCÊ DECIDE!',center,h*.23+60*s,bw-35*s);
+   g.font=`700 ${26*s}px "Pixelify Sans",sans-serif`;g.fillText('Qual obra vamos construir?',center,h*.23+120*s,bw-35*s);
+ }else{
+   const intro=clamp((age-3)/.5,0,1);g.globalAlpha=intro;
+   card(x,h*.16,bw,103*s);g.fillStyle='#3b2412';g.font=`700 ${32*s}px "Pixelify Sans",sans-serif`;g.fillText('🏗️ PRÓXIMA CONSTRUÇÃO',center,h*.16+50*s,bw-28*s);
+   const gap=18*s,bh=118*s,first=h*.32;
+   options.forEach((opt,i)=>{const appear=clamp((age-(3.5+i*1.35))/.4,0,1);if(appear<=0)return;g.save();g.globalAlpha=intro*appear;const y=first+i*(bh+gap);card(x,y,bw,bh);g.fillStyle='#8b4a1f';g.font=`700 ${32*s}px "Pixelify Sans",sans-serif`;g.fillText(String(i+1),x+48*s,y+bh/2,60*s);g.fillStyle='#3b2412';g.font=`700 ${28*s}px "Pixelify Sans",sans-serif`;g.fillText(opt,center+22*s,y+bh/2,bw-135*s);g.restore()});
+   if(age>=Math.max(9,duration-7)){const a=clamp((age-Math.max(9,duration-7))/.5,0,1);g.globalAlpha=a;card(x,h*.78,bw,150*s);g.fillStyle='#3b2412';g.font=`700 ${30*s}px "Pixelify Sans",sans-serif`;g.fillText('💬 COMENTE 1, 2 OU 3!',center,h*.78+48*s,bw-30*s);g.fillStyle='#8b4a1f';g.font=`700 ${23*s}px "Pixelify Sans",sans-serif`;g.fillText('A mais votada será construída!',center,h*.78+105*s,bw-30*s)}
+ }
+ g.restore();
+}
+function votePreview(options,duration){
+ closeModal();const layer=document.createElement('div');layer.id='votePreviewLayer';layer.style.cssText='position:fixed;inset:0;z-index:10050;background:#101b12;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:12px;box-sizing:border-box';
+ layer.innerHTML='<strong style="color:white">🗳️ PRÉVIA DA VOTAÇÃO</strong><canvas width="540" height="960" style="display:block;max-width:100%;max-height:72vh;aspect-ratio:9/16;object-fit:contain;border:3px solid #e9b768;border-radius:12px"></canvas><div style="display:flex;gap:8px"><button class="btn" id="voteBack">↩ Voltar</button><button class="btn" id="voteRecord">🔴 Gravar vídeo</button></div>';
+ document.body.appendChild(layer);const target=layer.querySelector('canvas'),g=target.getContext('2d'),start=performance.now();let raf=0;
+ function stop(){cancelAnimationFrame(raf);layer.remove()}
+ layer.querySelector('#voteBack').onclick=()=>{stop();openRecMenu()};
+ layer.querySelector('#voteRecord').onclick=()=>{stop();STUDIO.mode='vote';ARRIVALS.active=false;const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;startRec(false);if(REC){REC.vote={options,seconds:duration};TOUR=null;follow=null;pinnedFollow=false;}else{soundRec=oldSound;delete STUDIO.restoreSound}};
+ function tick(){const age=(performance.now()-start)/1000,sw=cv.width,sh=cv.height,ratio=target.width/target.height;let ww=sw,hh=sw/ratio;if(hh>sh){hh=sh;ww=sh*ratio}g.drawImage(cv,(sw-ww)/2,(sh-hh)/2,ww,hh,0,0,target.width,target.height);drawVoteOverlay(g,target.width,target.height,age,options,duration);if(age<duration)raf=requestAnimationFrame(tick);else{stop();openRecMenu()}}tick();
+}
+
+const STUDIO={voteOptions:['🏠 Casa','🌾 Fazenda','🏪 Mercado'],voteSeconds:20,mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party'};
 function openRecMenu(){
- const modes=[['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
+ const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
  modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o conteúdo, ajuste a gravação e comece seu vídeo.</p>
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
@@ -2627,21 +2663,23 @@ function openRecMenu(){
    <label>Duração do vídeo</label><select class="in" id="stSeconds"><option value="12">12 segundos</option><option value="18">18 segundos</option><option value="20">20 segundos</option><option value="25">25 segundos</option><option value="40">40 segundos</option></select>
    <p class="tip">Um vídeo por inscrito. Depois de salvar, use “Cadastrar próximo inscrito” para gravar outra chegada.</p>`;
  }
+ if(STUDIO.mode==='vote'){extra=`<div class="bgrp">🗳️ Votação da próxima construção</div><p class="tip">Defina três obras. O vídeo apresentará as opções numeradas e pedirá votos nos comentários. A obra vencedora será construída por você depois da votação.</p>${[0,1,2].map(i=>`<label>Opção ${i+1}</label><input class="in" id="stVote${i}" maxlength="38" placeholder="Nome da obra" value="${esc(STUDIO.voteOptions[i])}">`).join('')}<label>Duração do Short</label><select class="in" id="stVoteSeconds"><option value="20">20 segundos</option><option value="30">30 segundos</option></select><p class="tip">O vídeo não contabiliza votos automaticamente. Confira os comentários do YouTube e construa a mais votada no jogo.</p>`;}
  if(STUDIO.mode==='resident'){extra='<label>Morador em destaque</label><select class="in" id="stResident">'+(npcs.length?npcs.map(n=>`<option value="${n.id}">${esc(n.name)}</option>`).join(''):'<option value="">Adicione um morador primeiro</option>')+'</select>'}
  $('stExtra').innerHTML=extra;
  if($('stNewProf')){ $('stNewName').value=SHORTS_DRAFT.name; $('stNewProf').value=SHORTS_DRAFT.prof; $('stNewSex').value=SHORTS_DRAFT.sex; $('stNewCustom').value=SHORTS_DRAFT.custom; $('stNewCustom').style.display=SHORTS_DRAFT.prof==='custom'?'block':'none'; $('stNewHandle').value=SHORTS_DRAFT.handle; $('stNewPet').value=SHORTS_DRAFT.pet; $('stNewProf').onchange=()=>{$('stNewCustom').style.display=$('stNewProf').value==='custom'?'block':'none'};$('stSeconds').value=String(ARRIVALS.seconds);$('stSeconds').onchange=()=>ARRIVALS.seconds=Number($('stSeconds').value);}
 
+ if($('stVoteSeconds')){$('stVoteSeconds').value=String(STUDIO.voteSeconds);$('stVoteSeconds').onchange=()=>STUDIO.voteSeconds=Number($('stVoteSeconds').value);for(let i=0;i<3;i++)$('stVote'+i).oninput=e=>STUDIO.voteOptions[i]=e.target.value;}
  if($('stEvent')){$('stEvent').value=STUDIO.event;$('stEvent').onchange=e=>STUDIO.event=e.target.value}if($('stResident')){$('stResident').value=STUDIO.resident||String(npcs[0]?.id||'');STUDIO.resident=$('stResident').value;$('stResident').onchange=e=>STUDIO.resident=e.target.value}
  function updateSummary(){$('stSummary').textContent=`${STUDIO.format==='horizontal'?'YouTube 16:9':'Shorts 9:16'} · ${STUDIO.camera==='auto'?'câmera automática':STUDIO.camera==='manual'?'câmera manual':'câmera fixa'} · ${STUDIO.captions?'com':'sem'} legendas${STUDIO.mode==='welcome'?' · cadastro e chegada real de novo morador':STUDIO.mode==='invitation'?' · convite de 25s para mundo vazio':''}`;}updateSummary();
  }
  update();
- $('stStart').onclick=()=>{if(STUDIO.mode==='invitation'){inviteRecord();return}if(STUDIO.mode==='resident'&&!npcs.length){alert('Adicione um morador antes de gravar sua história.');return}const mode=STUDIO.mode;
+ $('stStart').onclick=()=>{if(STUDIO.mode==='vote'){const opts=voteReadOptions();if(!opts)return;STUDIO.voteOptions=opts;ARRIVALS.active=false;closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;startRec(false);if(REC){REC.vote={options:opts,seconds:STUDIO.voteSeconds};TOUR=null;follow=null;pinnedFollow=false;}else{soundRec=oldSound;delete STUDIO.restoreSound;}return;}if(STUDIO.mode==='invitation'){inviteRecord();return}if(STUDIO.mode==='resident'&&!npcs.length){alert('Adicione um morador antes de gravar sua história.');return}const mode=STUDIO.mode;
  if(mode==='welcome'){const d=shortsReadDraft();if(!d)return;shortsStartFromDraft(d);return;}else ARRIVALS.active=false;
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  if(mode==='event'){startRecEvent(STUDIO.event)}else{startRec(mode==='welcome'?false:STUDIO.camera==='auto'&&mode!=='free');if(REC&&mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}}}
  if(!REC){soundRec=oldSound;ARRIVALS.active=false;}
  };
- $('stPreview').onclick=()=>{if(STUDIO.mode==='invitation'){INVITE_PREVIEW_CAM={x:cam.x,y:cam.y,z:cam.z};INVITE_PREVIEW_FOLLOW=follow;INVITE_PREVIEW_PIN=pinnedFollow;invitePreview();return}if(STUDIO.mode==='welcome'){const d=shortsReadDraft();if(!d)return;closeModal();shortsPreview(d);return}closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
+ $('stPreview').onclick=()=>{if(STUDIO.mode==='vote'){const opts=voteReadOptions();if(opts){STUDIO.voteOptions=opts;votePreview(opts,STUDIO.voteSeconds)}return;}if(STUDIO.mode==='invitation'){INVITE_PREVIEW_CAM={x:cam.x,y:cam.y,z:cam.z};INVITE_PREVIEW_FOLLOW=follow;INVITE_PREVIEW_PIN=pinnedFollow;invitePreview();return}if(STUDIO.mode==='welcome'){const d=shortsReadDraft();if(!d)return;closeModal();shortsPreview(d);return}closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour()};
 }
 
 // ================== BAIRROS ==================
