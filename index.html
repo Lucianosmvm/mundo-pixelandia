@@ -848,11 +848,21 @@ let tickAcc=0,slowAcc=0;
 // --- relógio: o modo Episódio para no fim da tarde até você encerrar o dia ---
 let dayMode='ep',FF=null,epMin=20;
 function timeStep(dt){
-  if(FF){mins+=dt*36;if(day()>FF.day&&hour()>=6.5){FF=null;sfx('morning');announce(`☀️ DIA ${day()} COMEÇOU!`,`Bom dia, ${villageName}!`);logEv(`☀️ Começou o dia ${day()}`);save()}return}
+  const recap=REC?.dayRecap;
+  if(FF){
+    mins+=dt*36/(FF.realTime?timeScale:1);
+    if(mins>=FF.day*1440+FF.dawn){FF=null;sfx('morning');announce(`☀️ DIA ${day()} COMEÇOU!`,`Bom dia, ${villageName}!`);logEv(`☀️ Começou o dia ${day()}`);save()}
+    return;
+  }
+  if(recap&&!REC.stopping&&!recap.nightStarted)return;
   if(dayMode==='ep'){const h=hour();if(h>=20.5||h<6){mins+=dt*36;return}if(h>=16)return;mins+=dt*570/(epMin*60);return}
   mins+=dt*1440/(dayMode==='normal'?1800:300);
 }
-function endDay(){if(FF)return;FF={day:day()};const base=Math.floor(mins/1440)*1440;if(hour()<18)mins=base+18*60;
+function endDay({dawn=390,realTime=false}={}){
+  if(FF||(REC?.dayRecap&&!REC.stopping&&!REC.dayRecap.nightStarted))return;
+  FF={day:day(),dawn,realTime};
+  const base=Math.floor(mins/1440)*1440;
+  if(hour()<18)mins=base+18*60;
   sfx('night');announce(`🌙 FIM DO DIA ${FF.day}!`,`Boa noite, ${villageName} 💤`);logEv(`🌙 Fim do dia ${FF.day}`);
   if(!$('panel').classList.contains('hidden')&&isMobile())togglePanel()}
 function setDayMode(m){dayMode=m;document.querySelectorAll('[data-day]').forEach(x=>x.classList.toggle('on',x.dataset.day===m));save()}
@@ -1768,6 +1778,7 @@ function frame(now){
   updateAmbient(dt);
   arrivalSceneTick(now,dt);
   welcomeGroupTick(now);
+  dayRecapTick(now);
   tourTick(dt);
   cameraScriptTick(now);
   if(!(REC&&REC.arrivalScene)&&!TOUR&&follow!=null){const n=npcs.find(m=>m.id===follow);if(n&&n.active){cam.x+=(n.x-cam.x)*Math.min(1,dt*4);cam.y+=(n.y-cam.y)*Math.min(1,dt*4)}else if(!n)follow=null}
@@ -2575,12 +2586,18 @@ function recFrame(now){
   const gl=goalAt(goalIdx),prev=goalIdx>0?goalAt(goalIdx-1)[0]:0,pct=clamp((npcs.length-prev)/(gl[0]-prev),0,1);
   g.fillStyle='rgba(255,255,255,.2)';g.fillRect(48*s,HY+96*s,W2-96*s,7*s);g.fillStyle='#f6c344';g.fillRect(48*s,HY+96*s,(W2-96*s)*pct,7*s);
   }
+  const hAge=(now-REC.start)/1000;
+  if(REC.dayRecap){
+    if(REC.stopping)drawShortsCTA(g,W2,H2,s,(now-REC.dayRecap.inviteAt)/1000+1.3,4);
+    else drawDayRecap(g,W2,H2,REC.dayRecap,now);
+    $('recBtn').textContent=`⏹ Parar ${Math.floor(hAge)}s`;
+    return;
+  }
   // anúncio
   if(STUDIO.captions&&ANN&&!REC.vote&&!REC.arrivalId&&!REC.inviteSeconds&&!(HOOK_ON&&(now-REC.start)/1000<3)){const age=(now-ANN.at)/1000;if(age<4.4){const sc=age<0.25?0.5+age*2:1,al=age>3.8?(4.4-age)/0.6:1;g.save();g.globalAlpha=clamp(al,0,1);g.translate(W2/2,H2*0.3);g.scale(sc,sc);
     g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;const tw=Math.min(W2-60*s,Math.max(g.measureText(ANN.t).width,(g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`,g.measureText(ANN.s).width))+60*s);
     g.fillStyle='#f7e2b5';rr(g,-tw/2,-62*s,tw,124*s,16*s);g.fill();g.lineWidth=6*s;g.strokeStyle='#8b4a1f';g.stroke();g.textAlign='center';g.fillStyle='#3b2412';g.font=`700 ${44*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.t,0,-16*s,tw-30*s);
     g.fillStyle='#8b4a1f';g.font=`600 ${28*s}px "Pixelify Sans",sans-serif`;g.fillText(ANN.s,0,32*s,tw-30*s);g.restore()}}
-  const hAge=(now-REC.start)/1000;
   if(STUDIO.captions&&TOUR&&!REC.vote&&!REC.inviteSeconds&&!(HOOK_ON&&hAge<3)){const st=TOUR.steps[TOUR.i];if(st){if(st.demo)drawDemoOverlay(g,W2,H2,s,TOUR.t);else drawCaption(g,W2,H2,s,st.title,capSub(st),st.cta,TOUR.t)}}
   if(REC.vote){if(!REC.customStudio||hAge>=REC.vote.start&&hAge<REC.vote.start+REC.vote.visualSeconds)drawVoteOverlay(g,W2,H2,REC.customStudio?hAge-REC.vote.start:hAge,REC.vote.options,REC.customStudio?REC.vote.visualSeconds:REC.vote.seconds);if(STUDIO.music&&Math.floor(hAge/5)!==REC.vote.musicStep&&hAge<REC.vote.seconds-2){REC.vote.musicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.vote.seconds&&!REC.stopping)stopRec()}
   if(REC.inviteSeconds){inviteOverlay(g,W2,H2,hAge);if(STUDIO.music&&Math.floor(hAge/5)!==REC.inviteMusicStep&&hAge<REC.inviteSeconds-2){REC.inviteMusicStep=Math.floor(hAge/5);sfx('tune')}if(hAge>=REC.inviteSeconds&&!REC.stopping)stopRec()}
@@ -2649,8 +2666,9 @@ function startRec(auto){
   if(auto&&!REC.arrivalId){if(STUDIO.mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}else startTour()}else startTour();if(TOUR)REC.tourDuration=TOUR.steps.reduce((sum,step)=>sum+step.dur,0)}if(STUDIO.mode==='welcome'&&!npcs.length&&!auto)startTour();
 }
 function stopRec(){if(!REC||REC.stopping)return;REC.stopping=true;$('recBtn').style.display='none';
+  if(REC.dayRecap)REC.dayRecap.inviteAt=performance.now();
   // grava um pouquinho a mais: o gravador do celular perde o finalzinho do vídeo ao parar
-  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const m of R0.groupWelcome.members){const n=npcs.find(n=>n.id===m.id);if(n){n.arrivalJump=0;n.moving=false;n.status='Novo morador'}}save();refreshPanel(true)}$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},REC.ext==='mp4'?3500:900)}
+  setTimeout(()=>{if(!REC)return;const R0=REC;REC=null;R0.end=performance.now();finishArrivalScene(R0);if(R0.groupWelcome){ARRIVALS.active=false;for(const m of R0.groupWelcome.members){const n=npcs.find(n=>n.id===m.id);if(n){n.arrivalJump=0;n.moving=false;n.status='Novo morador'}}save();refreshPanel(true)}$('recBtn').style.display='none';$('showBtn').style.display=$('camBtn').style.display=$('panel').classList.contains('hidden')?'block':'none';try{R0.mr.stop()}catch(e){finishRec(R0)}if(TOUR&&(R0.auto||R0.inviteSeconds))TOUR=null;if(STUDIO.restoreSound!==undefined){soundRec=STUDIO.restoreSound;delete STUDIO.restoreSound}},REC.dayRecap?4000:REC.ext==='mp4'?3500:900)}
 // ===== corrige a duração do vídeo (MediaRecorder grava sem duração → YouTube mostra 0s) =====
 // mede a duração real gravada dentro do arquivo (em ms), em vez de usar o relógio
 function mp4MediaMs(buf){
@@ -2990,9 +3008,61 @@ function votePreview(options,duration){
  function tick(){const age=(performance.now()-start)/1000,sw=cv.width,sh=cv.height,ratio=target.width/target.height;let ww=sw,hh=sw/ratio;if(hh>sh){hh=sh;ww=sh*ratio}g.drawImage(cv,(sw-ww)/2,(sh-hh)/2,ww,hh,0,0,target.width,target.height);drawVoteOverlay(g,target.width,target.height,age,options,duration);if(age<duration)raf=requestAnimationFrame(tick);else{stop();openRecMenu()}}tick();
 }
 
+function dayRecapHighlights(){
+ const today=day();
+ return DAYLOG.filter(e=>e.d===today||e.d===today-1)
+  .sort((a,b)=>(a.d===today)-(b.d===today)||b.w-a.w||b.at-a.at);
+}
+function startDayRecap(highlight){
+ if(REC||FF){alert('Aguarde a gravação ou a passagem da noite terminar.');return}
+ ARRIVALS.active=false;
+ closeModal();
+ const oldSound=soundRec;
+ soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
+ startRec(false);
+ if(!REC){soundRec=oldSound;delete STUDIO.restoreSound;return}
+ const plaza={x:CX*T+8,y:CY*T+8,z:isMobile()?2.3:2.8};
+ REC.dayRecap={highlight,plaza,closingDay:day()};
+ TOUR=null;follow=null;pinnedFollow=false;
+ Object.assign(cam,highlight?{x:highlight.x,y:highlight.y,z:plaza.z}:plaza);
+ clampCam();
+}
+function dayRecapTick(now){
+ const recap=REC?.dayRecap;
+ if(!recap||REC.stopping)return;
+ if(!recap.nightStarted&&(now-REC.start)>=7500){
+  recap.nightStarted=true;
+  Object.assign(cam,recap.plaza);
+  clampCam();
+  endDay({dawn:420,realTime:true});
+ }
+ if(recap.nightStarted&&!FF&&day()>recap.closingDay){
+  recap.morningAt??=now;
+  if(now-recap.morningAt>=6500)stopRec();
+ }
+}
+function drawDayRecap(g,w,h,recap,now){
+ if(!STUDIO.captions)return;
+ const d=recap.closingDay;
+ if(!recap.nightStarted){
+  const {highlight}=recap;
+  g.save();
+  g.globalAlpha=clamp((now-REC.start)/350,0,1);
+  drawWelcomeCard(g,w,h,highlight?.t||`Mais um dia em ${villageName}`,highlight?`Destaque do dia ${highlight.d}`:`Dia ${d}`,.75);
+  g.restore();
+ }else if(recap.morningAt!=null){
+  drawWelcomeCard(g,w,h,`Bom dia, ${villageName}!`,`Dia ${day()}`,.75);
+ }else if(day()!==d&&hour()>=5){
+  drawWelcomeCard(g,w,h,'A vila começa a acordar',`Amanhecer · Dia ${day()}`,.75);
+ }else if(day()===d&&hour()<20.5){
+  drawWelcomeCard(g,w,h,'O sol se põe na vila',`Fim do dia ${d}`,.75);
+ }else{
+  drawWelcomeCard(g,w,h,'Boa noite, Pixelândia','',.75);
+ }
+}
 const STUDIO={voteOptions:['🏠 Casa','🌾 Fazenda','🏪 Mercado'],voteSeconds:20,mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party'};
 function openRecMenu(){
- const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
+ const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['recap','🌙','Resumo do dia','Um destaque, a noite na vila e o amanhecer'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
  modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o conteúdo, ajuste a gravação e comece seu vídeo.</p>
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
@@ -3002,12 +3072,23 @@ function openRecMenu(){
  <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia</button></div>
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
  $('mX').onclick=closeModal;
+ const recapHighlights=dayRecapHighlights();
+ let recapHighlight=recapHighlights[0]||null;
  const f=$('stFormat'),camSel=$('stCamera');f.value=STUDIO.format;camSel.value=STUDIO.camera;
  for(const [key,id] of [['captions','stCaptions'],['music','stMusic'],['hud','stHud']]){$(id).checked=STUDIO[key];$(id).onchange=e=>{STUDIO[key]=e.target.checked;update()}}
  f.onchange=()=>{STUDIO.format=f.value;update()};camSel.onchange=()=>{STUDIO.camera=camSel.value;update()};
  $('modalBox').querySelectorAll('[data-studio]').forEach(b=>b.onclick=()=>{STUDIO.mode=b.dataset.studio;update()});
  function update(){if(STUDIO.mode==='invitation'){STUDIO.format='vertical';STUDIO.camera='auto';STUDIO.hud=false;f.value='vertical';camSel.value='auto';$('stHud').checked=false}document.querySelectorAll('.studio-mode').forEach(b=>b.classList.toggle('studio-selected',b.dataset.studio===STUDIO.mode));
+ const recapMode=STUDIO.mode==='recap';
+ camSel.disabled=recapMode;
+ camSel.value=recapMode?'auto':STUDIO.camera;
+ $('stPreview').hidden=recapMode;
  let extra='';if(STUDIO.mode==='event'){extra='<label>Evento</label><select class="in" id="stEvent">'+EVENTS.map(([k,i,l])=>`<option value="${k}">${i} ${l}</option>`).join('')+'</select>'}
+ if(recapMode){
+  const options=recapHighlights.map((event,i)=>`<option value="${i}">Dia ${event.d} · ${esc(event.t)}</option>`).join('');
+  extra=`<label for="stRecapHighlight">Destaque de abertura</label><select class="in" id="stRecapHighlight">${options}<option value="-1">Vista geral da vila</option></select>
+  <p class="tip">O destaque mostra o local como ele está hoje. A gravação encerra o dia atual da vila e termina depois do amanhecer.</p>`;
+ }
  if(STUDIO.mode==='invitation'){extra=`<div class="bgrp">🌍 Convite de inauguração</div><p class="tip">Mostre o mundo vazio com uma chamada forte nos 3 primeiros segundos. Convide o público a comentar nome e profissão para virar morador. Não cria personagens fictícios.</p><p class="tip"><b>Duração:</b> 25 segundos · <b>Formato:</b> vertical 9:16 · <b>Som:</b> efeitos e música sintética</p>${npcs.length?'<p style="color:#a33;font-weight:bold">⚠️ A vila já tem moradores. Crie um mundo novo para gravar a inauguração.</p>':''}`;}
  if(STUDIO.mode==='welcome'){
    extra=`<div class="bgrp">✨ Novo inscrito — cadastrar e gravar</div>
@@ -3034,6 +3115,11 @@ function openRecMenu(){
   extra+='<div class="bgrp">📝 Roteiro personalizado</div><label><input type="checkbox" id="stScriptMode"> Usar meu roteiro</label><div id="stScriptArea" style="display:none"><p class="tip">Comandos: [CENA: VILA], ['+(mode==='vote'?'VOTACAO':'EVENTO')+'], [CENA: FINAL]. Use também [CAMERA: LAGO], [CAMERA: PORTO], [CAMERA: AEROPORTO], [CAMERA: HOSPITAL], [CAMERA: CONSTRUCAO 3], [ZOOM: 2] e [ESPERAR: 3]. O texto é exibido em sequência, sem voz.</p><textarea class="in" id="stScriptText" rows="11" style="width:100%;box-sizing:border-box"></textarea><button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button><button type="button" class="btn sm" id="stScriptSave">💾 Salvar roteiro</button></div>';
  }
  $('stExtra').innerHTML=extra;
+ if(recapMode){
+  const field=$('stRecapHighlight');
+  field.value=String(recapHighlights.indexOf(recapHighlight));
+  field.onchange=()=>{recapHighlight=recapHighlights[Number(field.value)]||null};
+ }
  if(STUDIO.mode==='vote'||STUDIO.mode==='event'){
   const mode=STUDIO.mode,ta=$('stScriptText');
   ta.value=STUDIO_SCRIPTS[mode];
@@ -3062,7 +3148,7 @@ function openRecMenu(){
  function updateSummary(){$('stSummary').textContent=`${STUDIO.format==='horizontal'?'YouTube 16:9':'Shorts 9:16'} · ${STUDIO.camera==='auto'?'câmera automática':STUDIO.camera==='manual'?'câmera manual':'câmera fixa'} · ${STUDIO.captions?'com':'sem'} legendas${STUDIO.mode==='welcome'?' · cadastro e chegada real de novo morador':STUDIO.mode==='invitation'?' · convite de 25s para mundo vazio':''}`;}updateSummary();
  }
  update();
- $('stStart').onclick=()=>{if(STUDIO.mode==='vote'){const scenes=studioScriptRead('vote');if(scenes===false)return;const opts=voteReadOptions();if(!opts)return;STUDIO.voteOptions=opts;ARRIVALS.active=false;closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;startRec(false);if(REC){REC.vote={options:opts,seconds:STUDIO.voteSeconds};if(scenes)studioScriptAttach(scenes,'vote');TOUR=null;follow=null;pinnedFollow=false;}else{soundRec=oldSound;delete STUDIO.restoreSound;}return;}if(STUDIO.mode==='invitation'){inviteRecord();return}if(STUDIO.mode==='resident'&&!npcs.length){alert('Adicione um morador antes de gravar sua história.');return}const mode=STUDIO.mode;const eventScenes=mode==='event'?studioScriptRead('event'):null;if(eventScenes===false)return;
+ $('stStart').onclick=()=>{if(STUDIO.mode==='recap'){startDayRecap(recapHighlight);return}if(STUDIO.mode==='vote'){const scenes=studioScriptRead('vote');if(scenes===false)return;const opts=voteReadOptions();if(!opts)return;STUDIO.voteOptions=opts;ARRIVALS.active=false;closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;startRec(false);if(REC){REC.vote={options:opts,seconds:STUDIO.voteSeconds};if(scenes)studioScriptAttach(scenes,'vote');TOUR=null;follow=null;pinnedFollow=false;}else{soundRec=oldSound;delete STUDIO.restoreSound;}return;}if(STUDIO.mode==='invitation'){inviteRecord();return}if(STUDIO.mode==='resident'&&!npcs.length){alert('Adicione um morador antes de gravar sua história.');return}const mode=STUDIO.mode;const eventScenes=mode==='event'?studioScriptRead('event'):null;if(eventScenes===false)return;
  if(mode==='welcome'){welcomeStartBatch();return;}else ARRIVALS.active=false;
  closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;
  if(mode==='event'){startRecEvent(STUDIO.event,eventScenes)}else{startRec(mode==='welcome'?false:STUDIO.camera==='auto'&&mode!=='free');if(REC&&mode==='resident'&&STUDIO.resident){const n=npcs.find(x=>x.id===Number(STUDIO.resident));if(n){follow=n.id;pinnedFollow=true;TOUR=null}}}
