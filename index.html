@@ -424,7 +424,35 @@ function deposit(m,silent){if(!m.carry)return;if(m.carryRes){res[m.carryRes]=(re
 function take(key,q){if(res[key]>=q){res[key]-=q;return true}return false}
 
 // ================== IAs (moradores visíveis) ==================
-function aiWander(n){if(!(n.status&&n.status.startsWith('Esperando')))n.status='Passeando';n.plan=[goal(wanderGoal()),wait(rnd(1,3.5))];sayLine(n,0.1);return true}
+// Aprendizado local e reversível: bandit epsilon-greedy apenas para passeios opcionais.
+// Não interfere em profissões, emergências, casamentos, filhos ou eventos.
+const LEARN_KEY='pixelandia-resident-learning-v1';
+let LEARN_ENABLED=false,LEARN_DATA={};
+try{const saved=JSON.parse(localStorage.getItem(LEARN_KEY)||'{}');LEARN_ENABLED=saved.enabled===true;LEARN_DATA=saved.data&&typeof saved.data==='object'?saved.data:{}}catch(e){}
+function learnPersist(){
+ try{const entries=Object.entries(LEARN_DATA).slice(-400);localStorage.setItem(LEARN_KEY,JSON.stringify({enabled:LEARN_ENABLED,data:Object.fromEntries(entries)}))}catch(e){}
+}
+function learnChoice(n){
+ const key=String(n.id),record=LEARN_DATA[key]||(LEARN_DATA[key]={visits:[0,0],scores:[0,0]});
+ if(!Array.isArray(record.visits)||!Array.isArray(record.scores)){record.visits=[0,0];record.scores=[0,0]}
+ const h=hour(),context=h<12?0:h<18?1:2;
+ const stats=record[context]||(record[context]=[[0,0],[0,0]]);
+ const option=Math.random()<0.16?Math.floor(Math.random()*2):(stats[0][0]===0?0:stats[1][0]===0?1:stats[0][1]/stats[0][0]>=stats[1][1]/stats[1][0]?0:1);
+ // Aprendizado por recompensa de passeio concluído; nunca cria eventos.
+ const prev=n._learnTrip;
+ if(prev){const p=LEARN_DATA[key]?.[prev.context]?.[prev.option];if(p){p[0]++;p[1]+=n.step==null&&n.plan?.length===0?1:0.35}}
+ n._learnTrip={context,option};
+ if(Math.random()<0.02)learnPersist();
+ return option;
+}
+function aiWander(n){
+ if(!(n.status&&n.status.startsWith('Esperando')))n.status='Passeando';
+ if(LEARN_ENABLED){
+   const choice=learnChoice(n);
+   n.plan=choice===0?[goNear(CX,CY,5),wait(rnd(1,3.5))]:[goal(wanderGoal()),wait(rnd(1,3.5))];
+ }else n.plan=[goal(wanderGoal()),wait(rnd(1,3.5))];
+ sayLine(n,0.1);return true
+}
 function treeGoal(strict,R,out){return(x,y)=>{for(const[dx,dy]of DIRS){const nx=x+dx,ny=y+dy;if(!inB(nx,ny))continue;const i=idx(nx,ny);if(obj[i]===O_TREE&&!reserved.has(i)&&(!strict||inR(nx,ny,R)||nearTarget(nx,ny))){out.c=i;return true}}return false}}
 function aiLumber(n){
   const R=clearR(),o={c:-1};
@@ -4103,6 +4131,19 @@ setInterval(()=>{const match=$('clock')?.textContent.match(/Dia\s+(\d+)/);if(mat
 function cinemaToggle(){cinema=!cinema;document.body.classList.toggle('pxCinema',cinema);bar.querySelector('[data-action="cinema"]').classList.toggle('active',cinema);if(cinema){view='';drawer.classList.remove('open');if(!$('panel').classList.contains('hidden'))$('hideBtn').click();notice('🎬 Câmera automática ativada');function focus(){const active=game.npcs.filter(n=>n.active&&!n.inside);if(!active.length)return;const n=active[cycle++%active.length];game.cam.x=n.x;game.cam.y=n.y;game.cam.x+=0;game.cam.y+=0}focus();cinemaTimer=setInterval(focus,9000)}else{clearInterval(cinemaTimer);notice('🎬 Modo cinematográfico encerrado')}}
 bar.onclick=async e=>{const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action;if(a==='panel'){togglePanel();view='';drawer.classList.remove('open')}
 else if(['people','family','events'].includes(a))show(a);else if(a==='cinema')cinemaToggle();else if(a==='full'){try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else notice('Instale o PWA para abrir sem a barra do navegador.')}catch(e){notice('Tela cheia indisponível neste navegador.')}}};
+// Controle simples no painel: desativar retorna imediatamente ao comportamento original.
+(function setupResidentLearning(){
+ const panel=document.getElementById('panel');if(!panel)return;
+ const wrap=document.createElement('div');wrap.className='card';wrap.style.cssText='font-size:14px;flex-shrink:0';
+ const label=document.createElement('div');label.style.cssText='font-weight:700;margin-bottom:6px';label.textContent='🧠 Aprendizado dos moradores';
+ const info=document.createElement('div');info.style.cssText='font-size:12px;margin:5px 0';info.textContent='Aprende preferências de passeio no próprio aparelho. Não decide eventos, casamentos ou filhos.';
+ const toggle=document.createElement('button');toggle.className='btn sm';toggle.type='button';
+ const reset=document.createElement('button');reset.className='btn sm';reset.type='button';reset.textContent='Limpar aprendizado';reset.style.marginLeft='5px';
+ const update=()=>{toggle.textContent=LEARN_ENABLED?'🟢 Ligado — desativar':'⚪ Desligado — ativar'};
+ toggle.onclick=()=>{LEARN_ENABLED=!LEARN_ENABLED;learnPersist();update()};
+ reset.onclick=()=>{LEARN_DATA={};for(const n of npcs)delete n._learnTrip;learnPersist();notice('Aprendizado dos passeios apagado')};
+ wrap.append(label,info,toggle,reset);panel.appendChild(wrap);update();
+})();
 addEventListener('beforeunload',persist);document.addEventListener('visibilitychange',()=>{if(document.hidden)persist()});
 })();
 
