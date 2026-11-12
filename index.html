@@ -2744,6 +2744,20 @@ function pxStoryText(){
 }
 function pxStoryOverlay(g,w,h,age){
  if(!STUDIO.captions||!REC)return;
+ // Eventos: mostrar primeiro o cartão de apresentação, depois a narrativa.
+ // O anúncio original é preservado, mas nunca é desenhado simultaneamente.
+ if(REC.studioMode==='event'&&REC.ev){
+   const introEnd=6;
+   if(age<introEnd){
+     const names={party:['🎆 FESTA NA PRAÇA!','Todo mundo pra praça dançar!'],rain:['⛈️ TEMPESTADE!','O chat pediu chuva... e veio com raio!'],snow:['❄️ NATAL NA VILA!','Neve e árvore de Natal na praça 🎄'],fire:['🔥 INCÊNDIO!','Chamem os bombeiros!'],chickens:['🐔 INVASÃO DE GALINHAS!','Quem pegar mais vira campeão!'],ufo:['👽 OVNI AVISTADO!','Ele está procurando alguém...']};
+     const title=names[REC.ev.k]||[hookText(REC.ev.k),''];
+     const announcement=ANN&&ANN.at>=REC.ev.t0?[ANN.t,ANN.s]:title;
+     drawWelcomeCard(g,w,h,announcement[0],announcement[1],.34);
+     return;
+   }
+   age-=introEnd;
+ }
+
  if(REC.arrivalId&&ARRIVALS.active&&ARRIVALS.index===ARRIVALS.ids.length-1&&(performance.now()-REC.arrivalStart)/1000>=REC.arrivalSeconds+(REC.customWelcome?REC.customWelcome.ending-4:0))return;
  if(REC.customStudio){
   const sections=REC.customStudio.sections,section=sections.find(x=>age>=x.start&&age<x.start+x.duration)||sections.at(-1);
@@ -2851,7 +2865,7 @@ function recFrame(now){
       }else if(age>=REC.arrivalSeconds+(REC.customWelcome?.ending||4))stopRec();
     }
   }
-  if(STUDIO.captions&&HOOK_ON&&hAge<3&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
+  if(STUDIO.captions&&HOOK_ON&&hAge<3&&REC.studioMode!=='event'&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
   if(REC?.groupWelcome&&STUDIO.captions)drawWelcomeGroup(g,W2,H2,hAge,REC.groupWelcome);
  else if(REC&&!REC.vote&&REC.studioMode!=='vote'&&(!REC.auto||!TOUR))pxStoryOverlay(g,W2,H2,hAge);
   // No encerramento, esconder a legenda narrativa e manter o convite por cima.
