@@ -1898,17 +1898,32 @@ function wedding(a,b){
   announce('💍 CASAMENTO!',`${a.name} e ${b.name} se casaram!`);sfx('bells');addHL(3,`💍 ${a.name} e ${b.name} se casaram`,CX*T+8,CY*T+8);logEv(`💍 ${a.name} e ${b.name} se casaram`);
   for(const m of[a,b]){if(!m.active&&!(m.abT>0))activate(m);if(!m.active)continue;m.inside=false;m.sleeping=false;m.plan=[goNear(CX,CY,2),fn(x=>{heart(x.x,x.y-22);heart(x.x+5,x.y-28);confetti(x.x,x.y-12);say(x,'Sim! 💍')}),wait(3)];m.step=null;m.idle=0}
   camTo(CX*T+8,CY*T+8);for(let k=0;k<5;k++)firework();npcVer++;save()}
-function novelaTick(d,h){
-  if(npcs.length<4)return;
-  if(h>=15.5&&hooks.wed<d){hooks.wed=d;if(npcs.length>=6&&Math.random()<0.6){const s=singles(),act=s.filter(m=>m.active);const pool=act.length>=2?act:s;if(pool.length>=2){const a=pick(pool);let b=pick(pool),t=0;while(b===a&&t++<10)b=pick(pool);if(a!==b)wedding(a,b)}}}
-  if(h>=7.5&&hooks.kid<d){hooks.kid=d;let ann=0;for(const n of npcs){if(n.spouse>n.id&&familyKids(n).length<3&&Math.random()<0.15){const sp=npcs.find(m=>m.id===n.spouse);if(!sp)continue;
-    const sx=Math.random()<.5?'m':'f',name=pick(sx==='f'?NAMES_F:NAMES_M),mom=n.sex==='f'?n:sp;mom.kids.push({name,sex:sx});mom.kid=null;
-    {const[px0,py0]=npcPos(mom);addHL(3,`👶 Nasceu ${name}, ${sx==='f'?'filha':'filho'} de ${n.name} e ${sp.name}`,px0,py0)}
-    if(ann===0)sfx('twinkle');
-    if(ann++<1)announce('👶 NASCEU UM BEBÊ!',`${name}, ${sx==='f'?'filha':'filho'} de ${n.name} e ${sp.name}`);logEv(`👶 Nasceu ${name}, ${sx==='f'?'filha':'filho'} de ${n.name} e ${sp.name}`)}}}
-  if(h>=14&&hooks.gos<d){hooks.gos=d;const act=npcs.filter(m=>m.active);const pool=act.length>=2?act:npcs;const a=pick(pool);let b=pick(pool);if(a!==b){
-    if(Math.random()<0.5){logEv(`😤 ${a.name} e ${b.name} brigaram ${pick(BRIGAS)}`);say(a,'Hunf! 😤');say(b,'Não fui eu!')}
-    else{logEv(`🤝 ${a.name} e ${b.name} viraram melhores amigos`);say(a,'Amigos! 🤝');heart(a.x,a.y-22);heart(b.x,b.y-22)}}}
+// Eventos sociais nunca acontecem automaticamente. Apenas o administrador os executa.
+function novelaTick(d,h){return}
+function undoWedding(n){
+  if(n.spouse<0)return;
+  const partner=npcs.find(m=>m.id===n.spouse);
+  if(!confirm('Desfazer o casamento de '+n.name+(partner?' e '+partner.name:'')+'? Os filhos serão mantidos até você removê-los manualmente.'))return;
+  if(partner&&partner.spouse===n.id)partner.spouse=-1;
+  n.spouse=-1;npcVer++;save();logEv('💍 Casamento de '+n.name+' desfeito pelo administrador');openCard(n);
+}
+function addChildManual(n){
+  const name=prompt('Nome do filho ou filha de '+n.name+':');if(name===null)return;
+  const nm=name.trim();if(!nm||nm.length>24||badName(nm)){alert('Informe um nome válido (até 24 caracteres).');return}
+  const sex=confirm('É uma menina? OK = menina, Cancelar = menino.')?'f':'m';
+  n.kids=n.kids||[];n.kids.push({name:nm,sex});n.kid=null;npcVer++;save();
+  logEv('👶 '+nm+' foi adicionado(a) à família de '+n.name+' pelo administrador');openCard(n);
+}
+function removeChildManual(n){
+  const sp=n.spouse>=0?npcs.find(m=>m.id===n.spouse):null;
+  const entries=[...((n.kids||[]).map((k,i)=>({parent:n,k,i}))),...(sp?(sp.kids||[]).map((k,i)=>({parent:sp,k,i})):[])];
+  if(!entries.length)return;
+  const choice=prompt('Qual filho deseja remover?\n'+entries.map((e,i)=>(i+1)+'. '+e.k.name+' (registro de '+e.parent.name+')').join('\n'));
+  if(choice===null)return;const ix=Number(choice)-1;
+  if(!Number.isInteger(ix)||ix<0||ix>=entries.length){alert('Escolha um número válido.');return}
+  const e=entries[ix];if(!confirm('Remover '+e.k.name+' da família?'))return;
+  e.parent.kids.splice(e.i,1);e.parent.kid=null;n.kid=null;if(sp)sp.kid=null;
+  npcVer++;save();logEv('👶 '+e.k.name+' removido(a) pelo administrador');openCard(n);
 }
 function electMayor(n){for(const m of npcs)m.mayor=false;n.mayor=true;if(!n.active)activate(n);follow=n.id;pinnedFollow=true;followUntil=0;
   sfx('fanfare');announce('🎖️ NOVO(A) PREFEITO(A)!',`${n.name} foi eleito(a) pela galera`);addHL(4,`🎖️ ${n.name} é o(a) novo(a) prefeito(a)`,CX*T+8,CY*T+8);logEv(`🎖️ ${n.name} foi eleito(a) prefeito(a)`);confetti(n.x,n.y-14);for(let k=0;k<4;k++)firework();npcVer++;save()}
@@ -1931,13 +1946,16 @@ function openCard(n){
     ${sp?`<div>💍 <b>Casado(a) com:</b> ${esc(sp.name)}</div>`:''}${kids.length?`<div>👶 <b>Filhos:</b> ${kids.map(k=>esc(k.name)).join(', ')}</div>`:''}${n.pet?`<div>${n.pet.k==='dog'?'🐶':'🐱'} <b>Pet:</b> ${n.pet.name?esc(n.pet.name)+' ('+(n.pet.k==='dog'?'cachorro':'gato')+')':(n.pet.k==='dog'?'um cachorro':'um gato')}</div>`:''}
     ${stats.length?`<div class="pc-stats">${stats.map(([k,v])=>`<div class="pc-stat"><b>${fmt(v)}</b>${STAT_L[k]}</div>`).join('')}</div>`:'<div style="opacity:.7">Acabou de chegar, ainda conhecendo a vila 👋</div>'}</div>
     <div class="pc-foot">🌳 ${esc(villageName)} · Dia ${day()} · ${fmt(npcs.length)} moradores</div></div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="cFol">🎥 Seguir</button><button class="btn" id="cPet">🐾 Pet</button>${n.spouse<0?'<button class="btn" id="cWed">💍 Casar</button>':''}<button class="btn${n.vip?' on':''}" id="cVip">👑 Membro</button><button class="btn${n.fan?' on':''}" id="cFan">💬 Comentarista</button><button class="btn${n.mayor?' on':''}" id="cMay">🎖️ Prefeito(a)</button><button class="btn" id="cX">Fechar</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="cFol">🎥 Seguir</button><button class="btn" id="cPet">🐾 Pet</button>${n.spouse<0?'<button class="btn" id="cWed">💍 Casar</button>':'<button class="btn" id="cUnwed">💔 Desfazer casamento</button>'}<button class="btn" id="cAddKid">👶 Adicionar filho</button>${kids.length?'<button class="btn" id="cRemoveKid">🗑️ Remover filho</button>':''}<button class="btn${n.vip?' on':''}" id="cVip">👑 Membro</button><button class="btn${n.fan?' on':''}" id="cFan">💬 Comentarista</button><button class="btn${n.mayor?' on':''}" id="cMay">🎖️ Prefeito(a)</button><button class="btn" id="cX">Fechar</button></div>
     <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input id="cName" class="in" maxlength="18" value="${esc(n.name)}" style="font-size:14px;padding:5px 8px"><button class="btn sm" id="cRen">✏️ Renomear</button></div><p id="cMsg" style="font-size:13px;margin:4px 0 0"></p>`);
   drawAvatar($('pcAv'),n);
   $('cX').onclick=closeModal;
   $('cRen').onclick=()=>{const v=$('cName').value.trim();if(!v)return;if(badName(v)){$('cMsg').textContent='⚠️ Esse nome foi bloqueado pelo filtro.';return}n.name=v;npcVer++;save();openCard(n)};
   $('cFol').onclick=()=>{if(n.abT>0){closeModal();return}if(!n.active)activate(n);follow=n.id;pinnedFollow=true;followUntil=0;cam.z=Math.max(cam.z,2.6);closeModal();refreshPanel(true)};
   if($('cWed'))$('cWed').onclick=()=>picker(`💍 Com quem ${n.name} vai casar?`,m=>m!==n&&m.spouse<0&&!(m.abT>0),m=>{closeModal();wedding(n,m)});
+  if($('cUnwed'))$('cUnwed').onclick=()=>undoWedding(n);
+  $('cAddKid').onclick=()=>addChildManual(n);
+  if($('cRemoveKid'))$('cRemoveKid').onclick=()=>removeChildManual(n);
   $('cVip').onclick=()=>{setVip(n,!n.vip);openCard(n)};
   $('cPet').onclick=()=>petEditor(n.pet,n.name,p=>{const had=n.pet;n.pet=p;n.petO=null;npcVer++;
     if(p&&(!had||had.k!==p.k)){const nm=p.name||(p.k==='dog'?'Um cachorrinho':'Um gatinho');announce(`${p.k==='dog'?'🐶':'🐱'} ${nm.toUpperCase()} CHEGOU!`,`O novo pet de ${n.name}`);sfx('fanfare');logEv(`${p.k==='dog'?'🐶':'🐱'} ${n.name} ganhou um pet: ${nm}`);addHL(3,`${p.k==='dog'?'🐶':'🐱'} ${n.name} ganhou um pet${p.name?': '+p.name:''}`,n.x,n.y);if(n.active&&!n.inside){heart(n.x,n.y-22);confetti(n.x,n.y-14)}}
@@ -4054,7 +4072,7 @@ function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':
 function npcName(id){return game.npcs.find(n=>n.id===id)?.name||'Morador'}
 function line(n,s){let spouse=n.spouse>=0?npcName(n.spouse):'Solteiro(a)',friend=s.friend!=null?npcName(s.friend):'—';return `<div class="person"><div><b>${escapeHtml(n.name)}</b> · ${escapeHtml(s.traits)}<div class="meters">⚡ ${Math.round(s.energy)}% · 🍲 ${Math.round(s.hunger)}% fome · 🙂 ${Math.round(s.mood)}% · 💬 ${Math.round(s.social)}%</div><div class="meters">💍 ${escapeHtml(spouse)} · 🤝 ${escapeHtml(friend)} · 👶 ${(n.kids||[]).length}</div></div><button data-follow="${n.id}">👁️</button></div>`}
 function render(){if(!view)return;const people=game.npcs;let h='';if(view==='people'){h='<h3>🧠 Vida dos moradores</h3><p>Necessidades mudam com o tempo e afetam o humor. A rotina de trabalho original permanece ativa.</p>';for(const n of people.slice(-35).reverse())h+=line(n,get(n));if(!people.length)h+='<p>Adicione moradores para começar.</p>'}
-if(view==='family'){h='<h3>❤️ Famílias e amizades</h3><p>Casamentos e filhos continuam no sistema original. Amizades e lembranças são persistidas nesta versão.</p>';for(const n of people.filter(n=>n.spouse>=0||n.kids?.length||get(n).friend!=null).slice(-35).reverse()){let s=get(n);h+=`<div class="person"><div><b>${escapeHtml(n.name)}</b><div class="meters">💍 ${escapeHtml(n.spouse>=0?npcName(n.spouse):'Solteiro(a)')} · 🤝 ${escapeHtml(s.friend!=null?npcName(s.friend):'—')}</div><div class="meters">👶 ${(n.kids||[]).map(k=>escapeHtml(k.name)).join(', ')||'Sem filhos'}</div><div class="meters">${s.memories.map(escapeHtml).join(' · ')}</div></div><button data-follow="${n.id}">👁️</button></div>`}if(!people.length)h+='<p>Nenhuma família ainda.</p>'}
+if(view==='family'){h='<h3>❤️ Famílias e amizades</h3><p>Casamentos e filhos são definidos somente pelo administrador. Use o cartão do morador para editar ou remover vínculos familiares.</p>';for(const n of people.filter(n=>n.spouse>=0||n.kids?.length||get(n).friend!=null).slice(-35).reverse()){let s=get(n);h+=`<div class="person"><div><b>${escapeHtml(n.name)}</b><div class="meters">💍 ${escapeHtml(n.spouse>=0?npcName(n.spouse):'Solteiro(a)')} · 🤝 ${escapeHtml(s.friend!=null?npcName(s.friend):'—')}</div><div class="meters">👶 ${(n.kids||[]).map(k=>escapeHtml(k.name)).join(', ')||'Sem filhos'}</div><div class="meters">${s.memories.map(escapeHtml).join(' · ')}</div></div><button data-follow="${n.id}">👁️</button></div>`}if(!people.length)h+='<p>Nenhuma família ainda.</p>'}
 if(view==='events'){h='<h3>🎉 Eventos dinâmicos</h3><p>Os eventos dependem dos recursos, população e bem-estar da vila. Você também pode iniciar um acontecimento.</p><div class="row"><button class="btn" data-event="festival">🎊 Festival</button><button class="btn" data-event="harvest">🌾 Colheita</button><button class="btn" data-event="aid">🤝 Mutirão</button></div><p class="tip">Eventos especiais originais continuam no painel Eventos & novela.</p>'}
 drawer.innerHTML=h;drawer.querySelectorAll('[data-follow]').forEach(b=>b.onclick=()=>{const n=people.find(p=>p.id===+b.dataset.follow);if(n){game.openCard(n);drawer.classList.remove('open')}});drawer.querySelectorAll('[data-event]').forEach(b=>b.onclick=()=>event(b.dataset.event,true))}
 function show(v){view=view===v?'':v;drawer.classList.toggle('open',!!view);render()}
