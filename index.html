@@ -1479,7 +1479,20 @@ function drawStatic(c,b,d,s,lit,wl,snow){
   else if(b.w>=4&&!isHouse(b.type)){px(c,'#4a2a12',dx-3,dy-1,16,15);px(c,s.door,dx-2,dy,14,14);px(c,'#4a2a12',dx+5,dy,1,14);px(c,'#f1c40f',dx+3,dy+7,1,1);px(c,'#f1c40f',dx+7,dy+7,1,1);px(c,'#d5d0c4',dx-4,y+h-2,18,2)}
   else{px(c,'#4a2a12',dx-1,dy-1,12,15);px(c,s.door,dx,dy,10,14);px(c,'rgba(0,0,0,.18)',dx+5,dy,1,14);px(c,'#f1c40f',dx+7,dy+7,1,1);px(c,'#c8c2b5',dx-1,y+h-2,12,2)}
   const rt=drawRoof(c,s,b,x,w,wallTop,snow);b._rt=rt;
-  if(s.chim){const cx0=x+w-12;px(c,'#8e3b2e',cx0,rt-4,5,12);px(c,'#6d2a20',cx0-1,rt-5,7,2);b._chim=[cx0+2,rt-6]}
+  if(s.chim){
+    const chimneyX=x+w-12,roof=roofShape(s,x,w);
+    let row=7;
+    // A base precisa caber na faixa de telhas sob a chaminé.
+    for(;row<roof.rh-1;row++){
+      const [left,width]=roof.span(row);
+      const start=Math.round(left);
+      if(start<=chimneyX&&start+Math.round(width)>=chimneyX+5)break;
+    }
+    const top=rt+row-11;
+    px(c,'#8e3b2e',chimneyX,top,5,12);
+    px(c,'#6d2a20',chimneyX-1,top-1,7,2);
+    b._chim=[chimneyX+2,top-2];
+  }
   if(s.water){const tx=x+w-16;px(c,'#5e3418',tx+1,rt-6,1,6);px(c,'#5e3418',tx+8,rt-6,1,6);px(c,'#8b5a2b',tx-1,rt-14,12,9);px(c,'#6b4226',tx-1,rt-14,12,1);px(c,'#6b4226',tx-1,rt-10,12,1)}
   if(s.deco){const cx=x+w/2;px(c,s.rc,cx-14,rt-6,28,6);px(c,shade(s.rc,25),cx-14,rt-6,28,1);px(c,s.rc,cx-8,rt-12,16,6);px(c,shade(s.rc,25),cx-8,rt-12,16,1);px(c,'#9aa0a8',cx,rt-22,1,10)}
   const o={x,y,w,h,wallTop,wallH,rt,s,b,lit,wl,snow,dx,dy};
