@@ -3102,7 +3102,7 @@ function welcomeGroupTick(now){
  }
  if(age>=G.cta&&R===REC)startWelcomeUpdate(now);
 }
-function drawWelcomeCard(g,w,h,title,subtitle='',at=.24,style='light',sc=w/720){
+function drawWelcomeCard(g,w,h,title,subtitle='',at=.24,style='light',sc=w/720,centerAt=false){
  const bw=Math.min(w*.87,640*sc),x=(w-bw)/2;
  const maxW=bw-52*sc,fs=(title.length>48?27:title.length>30?31:38)*sc,subFs=24*sc;
  g.save();g.textAlign='center';g.textBaseline='middle';
@@ -3111,7 +3111,7 @@ function drawWelcomeCard(g,w,h,title,subtitle='',at=.24,style='light',sc=w/720){
  const lines=wrap(title,titleFont),subs=subtitle?wrap(subtitle,subFont):[];
  const bh=Math.max(100*sc,34*sc+lines.length*fs*1.3+subs.length*subFs*1.4+(subs.length?12*sc:0));
  // Cards superiores: margem de 8 px no vídeo; cards inferiores preservados.
- const y=at<.5 ? 8*sc : h*at-bh/2;
+ const y=centerAt ? h*at-bh/2 : (at<.5 ? 8*sc : h*at-bh/2);
  g.shadowColor='rgba(0,0,0,.42)';g.shadowBlur=13*sc;g.shadowOffsetY=5*sc;
  g.fillStyle='#5e2f10';rr(g,x-5*sc,y-5*sc,bw+10*sc,bh+10*sc,14*sc);g.fill();
  g.shadowColor='transparent';g.shadowBlur=0;g.shadowOffsetY=0;
@@ -3459,12 +3459,12 @@ function drawVoteOverlay(g,w,h,age,vote){
  const alpha=clamp((age-vote.ballotAt)/.35,0,1);
  const scale=Math.min(w/720,h/960);
  g.save();g.globalAlpha=alpha;
- drawWelcomeCard(g,w,h,'Qual obra vamos construir?','',.16,'light',scale);
+ drawWelcomeCard(g,w,h,'Qual obra vamos construir?','',.19,'light',scale,true);
  vote.options.forEach((key,i)=>{
   const {icon,label}=BT[key];
-  drawWelcomeCard(g,w,h,(i+1)+' · '+icon+' '+label,'',.31+i*.15,'light',scale);
+  drawWelcomeCard(g,w,h,(i+1)+' · '+icon+' '+label,'',.31+i*.12,'light',scale,true);
  });
- drawWelcomeCard(g,w,h,'Vote nos comentários','Comente 1, 2 ou 3.',.78,'dark',scale);
+ drawWelcomeCard(g,w,h,'Vote nos comentários','Comente 1, 2 ou 3.',.73,'dark',scale,true);
  g.restore();
 }
 function startVoteRecording(vote){
