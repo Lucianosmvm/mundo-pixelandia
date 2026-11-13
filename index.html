@@ -56,6 +56,15 @@ input,select,button,textarea{font-family:inherit}
 .q .c{font-size:12px;opacity:.85;white-space:nowrap}
 .more{font-size:12px;opacity:.7;padding:2px 4px}
 .ctr{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ptabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;position:sticky;top:-10px;z-index:2;background:var(--paper);padding:6px 0 4px;margin-top:-4px}
+.ptabs button{font:inherit;font-size:18px;line-height:1.1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 2px;border:2px solid #c99a5b;border-radius:6px;background:#fff6df;color:var(--ink);cursor:pointer}
+.ptabs button span{font-size:11px;font-weight:700}
+.ptabs button[aria-selected="true"]{background:#7cc04a;border-color:var(--wood2);box-shadow:0 2px 0 var(--wood2)}
+#panel [data-tab][hidden]{display:none!important}
+.quickrec{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.quickrec .bopt{padding:6px 8px}.quickrec .bopt .bi{font-size:20px}
+#panel .btn.big.studio-main{background:#e9b768;margin-top:0}
+.studio-actions{position:sticky;bottom:-16px;z-index:1;background:var(--paper);margin:0 -16px -16px;padding:10px 16px 12px;border-top:2px solid #d5ac70}
 .ctr .lbl{font-size:13px;font-weight:600;width:100%;margin-top:4px}
 #camBtn{position:fixed;right:12px;top:64px;z-index:6;display:none;font-size:20px}
 #recBtn{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9;display:none;font-size:18px;padding:10px 18px}
@@ -141,7 +150,31 @@ body.pxCinema #pxQuick{opacity:.65}body.pxCinema #pxQuick:hover{opacity:1}
 
 <div id="panel" class="box">
   <div class="ph"><input id="villageName" value="Mundo Pixelândia" maxlength="28" title="Nome da vila"><button class="btn sm" id="hideBtn" title="Esconder painel (H)">✕</button></div>
-  <section class="card">
+  <nav class="ptabs" role="tablist" aria-label="Seções do painel">
+    <button type="button" role="tab" data-ptab="videos">🎬<span>Vídeos</span></button>
+    <button type="button" role="tab" data-ptab="people">👥<span>Moradores</span></button>
+    <button type="button" role="tab" data-ptab="village">🏗️<span>Vila</span></button>
+    <button type="button" role="tab" data-ptab="settings">⚙️<span>Ajustes</span></button>
+  </nav>
+  <section class="card" data-tab="videos">
+    <h3>🎬 Gravar agora</h3>
+    <button class="btn big studio-main" id="recMenuBtn">🎬 Abrir Estúdio de Vídeos</button>
+    <div class="quickrec">
+      <button type="button" class="bopt" data-quick="chapter"><span class="bi">📖</span><span class="bl">Capítulo</span><span class="bc" id="qChapter">Próximo da série</span></button>
+      <button type="button" class="bopt" data-quick="welcome"><span class="bi">🎉</span><span class="bl">Boas-vindas</span><span class="bc">Novos moradores</span></button>
+      <button type="button" class="bopt" data-quick="vote"><span class="bi">🗳️</span><span class="bl">Votação</span><span class="bc">Próxima obra</span></button>
+      <button type="button" class="bopt" data-quick="event"><span class="bi">🔥</span><span class="bl">Evento</span><span class="bc">Festa, fogo, OVNI…</span></button>
+    </div>
+  </section>
+  <section class="card" data-tab="videos"><h3>🎪 História da vila</h3>
+    <div class="ctr">
+      <button class="btn sm" id="evBtn">🎲 Evento da votação</button>
+      <button class="btn sm" id="wedBtn">💍 Casamento</button>
+      <button class="btn sm" id="mayBtn">🎖️ Eleger prefeito(a)</button>
+    </div>
+    <button class="btn big" id="endDayBtn" style="background:#5b6ea8;color:#fff">🌙 Encerrar o dia</button>
+    <p class="tip" style="margin-top:8px">Toque num morador (no mapa ou na lista) para abrir o <b>cartão</b> dele: dá para seguir, casar, marcar como membro 👑 ou comentarista 💬.</p></section>
+  <section class="card" data-tab="people">
     <h3>➕ Novo morador</h3>
     <label for="fName">Nome</label>
     <div class="row" style="flex-wrap:nowrap"><input id="fName" class="in" placeholder="Ex: Lucas" maxlength="18" autocomplete="off"><button class="btn" id="rndName" title="Nome aleatório">🎲</button></div>
@@ -154,23 +187,16 @@ body.pxCinema #pxQuick{opacity:.65}body.pxCinema #pxQuick:hover{opacity:1}
     <button class="btn sm" id="bulkBtn">📋 Adicionar vários</button>
     <p class="tip" id="tip"></p>
   </section>
-  <section class="card"><h3><span>🏗️ Obras pendentes</span><button class="btn vote" id="voteBtn">🗳️ Gerar obra</button></h3><div id="queueList"></div></section>
-  <section class="card"><h3>🏠 Construções concluídas (<span id="finishedCount">0</span>)</h3><div id="finishedList"></div></section>
-  <section class="card"><h3>🎪 Eventos & novela</h3>
-    <div class="ctr">
-      <button class="btn sm" id="evBtn">🎲 Evento da votação</button>
-      <button class="btn sm" id="wedBtn">💍 Casamento</button>
-      <button class="btn sm" id="mayBtn">🎖️ Eleger prefeito(a)</button>
-      <button class="btn sm" id="tlBtn">🎞️ Timelapse</button>
-      <button class="btn sm" id="distBtn">🏘️ Bairros</button>
-    </div>
-    <button class="btn big" id="recMenuBtn" style="background:#e9b768">🎬 Estúdio de Vídeos</button>
-    <button class="btn big" id="endDayBtn" style="background:#5b6ea8;color:#fff">🌙 Encerrar o dia</button>
-    <p class="tip" style="margin-top:8px">Toque num morador (no mapa ou na lista) para abrir o <b>cartão</b> dele: dá para seguir, casar, marcar como membro 👑 ou comentarista 💬.</p></section>
-  <section class="card"><h3><span>👥 Moradores (<b id="popN">0</b>)</span></h3>
+  <section class="card" data-tab="people"><h3><span>👥 Moradores (<b id="popN">0</b>)</span></h3>
     <input id="search" class="in" placeholder="🔎 Buscar morador..." style="margin-bottom:6px;font-size:14px;padding:5px 8px">
     <div id="npcList"></div></section>
-  <section class="card"><h3>⚙️ Controles</h3>
+  <section class="card" data-tab="village"><h3><span>🏗️ Obras pendentes</span><button class="btn vote" id="voteBtn">🗳️ Gerar obra</button></h3><div id="queueList"></div></section>
+  <section class="card" data-tab="village"><h3>🏠 Construções concluídas (<span id="finishedCount">0</span>)</h3><div id="finishedList"></div>
+    <div class="ctr" style="margin-top:8px">
+      <button class="btn sm" id="distBtn">🏘️ Bairros</button>
+      <button class="btn sm" id="tlBtn">🎞️ Timelapse</button>
+    </div></section>
+  <section class="card" data-tab="settings"><h3>⚙️ Controles</h3>
     <div class="ctr">
       <button class="btn sm on" data-spd="1">▶ 1x</button><button class="btn sm" data-spd="2">⏩ 2x</button><button class="btn sm" data-spd="4">⏩ 4x</button>
       <button class="btn sm" id="centerBtn">🎯 Centro</button>
@@ -3019,7 +3045,7 @@ async function finishRec(R0){
   const arrivalLabel=arrivalNpc?arrivalNpc.name.replace(/[^\p{L}\p{N}-]+/gu,'-').toLowerCase():null;
   const videoDay=R0.dayRecap?.closingDay||R0.recordDay;
   const kind={vote:'votacao',recap:'resumo',welcome:'boas-vindas',episode:'episodio',event:'evento',resident:'morador',free:'passeio',chapter:'capitulo-'+(R0.chapter?.n||'')}[R0.studioMode]||'video';
-  if(R0.chapter)chapterAdvance(R0.chapter);
+  if(R0.chapter){chapterAdvance(R0.chapter);quickChapterLabel()}
   const fileBase=R0.welcomeReplay?`pixelandia-dia-${videoDay}-boas-vindas`:arrivalLabel?`pixelandia-chegada-${arrivalLabel}`:R0.inviteSeconds?'pixelandia-convite-mundo-vazio':`pixelandia-dia-${videoDay}-${kind}`;
   modal(`<h3><span>🎬 Vídeo pronto!</span><button class="btn sm" id="mX">✕</button></h3><video src="${url}" controls playsinline style="width:100%;max-height:55vh;background:#000;border-radius:6px"></video>
     <p style="font-size:13px;margin:6px 0">${secs}s · ${mb} MB · formato ${R0.ext.toUpperCase()} · ${R0.c.width>R0.c.height?'horizontal 16:9':'vertical 9:16'}</p>
@@ -3922,14 +3948,14 @@ function studioEventOutline(){
  $('mX').onclick=openRecMenu;
 }
 function openRecMenu(){
- const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['recap','🌙','Resumo do dia','Um destaque, a noite na vila e o amanhecer'],['chapter','📖','Capítulo da série','História em partes, com gancho e meta de curtidas'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
+ const modes=[['chapter','📖','Capítulo da série','História em partes, com gancho e meta de curtidas'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['recap','🌙','Resumo do dia','Um destaque, a noite na vila e o amanhecer'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
  modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o conteúdo, ajuste a gravação e comece seu vídeo.</p>
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
  <div class="bgrp">2. Configuração</div><div class="studio-fields"><div id="stFormatField"><label for="stFormat">Formato do vídeo</label><select class="in" id="stFormat"><option value="horizontal">▭ Horizontal 16:9 — YouTube</option><option value="vertical">▯ Vertical 9:16 — Shorts / Reels</option></select></div>
  <div id="stCameraField"><label for="stCamera">Câmera</label><select class="in" id="stCamera"><option value="auto">🎬 Diretor automático</option><option value="manual">🕹️ Manual</option><option value="fixed">📌 Fixa</option></select></div>
  <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 📖 História narrada em textos e legendas</label><label><input type="checkbox" id="stPunch"> ⚡ Legendas de impacto (faixa amarela, estilo Shorts)</label><label><input type="checkbox" id="stHook"> 🪝 Gancho forte nos 3 primeiros segundos</label><label><input type="checkbox" id="stMusic"> 🎵 Música e efeitos no vídeo (sem voz)</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
- <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia</button></div>
+ <p class="tip" id="stSummary"></p><div class="row studio-actions"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia</button></div>
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
  $('mX').onclick=closeModal;
  const recapHighlights=dayRecapHighlights();
@@ -4298,7 +4324,22 @@ $('sndLive').onclick=()=>{audioInit();soundLive=!soundLive;if(SPK)SPK.gain.value
 $('sndRec').onclick=()=>{soundRec=!soundRec;sndUI();try{localStorage.setItem(SAVE_KEY+'_snd',JSON.stringify([soundLive,soundRec]))}catch(e){}};
 try{const v=JSON.parse(localStorage.getItem(SAVE_KEY+'_snd')||'null');if(v){soundLive=!!v[0];soundRec=v[1]!==false}}catch(e){}sndUI();$('endDayBtn').onclick=endDay;document.querySelectorAll('[data-season]').forEach(b=>b.onclick=()=>{if(b.dataset.season!==SEASON)setSeason(b.dataset.season)});document.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>setDayMode(b.dataset.day));
 document.querySelectorAll('[data-ep]').forEach(b=>b.onclick=()=>{epMin=+b.dataset.ep;document.querySelectorAll('[data-ep]').forEach(x=>x.classList.toggle('on',x===b));save()});$('distBtn').onclick=openDistricts;
-$('recMenuBtn').onclick=openRecMenu;$('camBtn').onclick=openRecMenu;$('recBtn').onclick=stopRec;
+$('recMenuBtn').onclick=openRecMenu;
+// Abas do painel: cada seção mostra só o que importa naquele momento.
+function panelTab(tab){
+ // Cards criados por outros módulos sem aba vão para Ajustes.
+ document.querySelectorAll('#panel > .card:not([data-tab])').forEach(el=>el.dataset.tab='settings');
+ document.querySelectorAll('#panel [data-tab]').forEach(el=>el.hidden=el.dataset.tab!==tab);
+ document.querySelectorAll('.ptabs [data-ptab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.ptab===tab)));
+ try{localStorage.setItem('pixelandia-panel-tab',tab)}catch(e){}
+ if(tab==='videos')quickChapterLabel();
+}
+function quickChapterLabel(){const el=$('qChapter');if(el&&typeof CHAPTER!=='undefined')el.textContent='#'+CHAPTER.n+' · parte '+(CHAPTER.step+1)+'/'+CHAPTER_ARCS[CHAPTER.arc].steps.length}
+document.querySelectorAll('.ptabs [data-ptab]').forEach(b=>b.onclick=()=>panelTab(b.dataset.ptab));
+document.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>{STUDIO.mode=b.dataset.quick;openRecMenu()});
+{let tab=null;try{tab=localStorage.getItem('pixelandia-panel-tab')}catch(e){}
+ if(!['videos','people','village','settings'].includes(tab))tab=npcs.length?'videos':'people';
+ panelTab(tab)}$('camBtn').onclick=openRecMenu;$('recBtn').onclick=stopRec;
 
 // 📋 Adicionar vários
 const PROF_ALIAS={};for(const k in PROF){PROF_ALIAS[norm(k)]=k;PROF_ALIAS[norm(PROF[k].label)]=k;PROF_ALIAS[norm(PROF[k].labelF)]=k}for(const a of['vaqueiro','vaqueira','criador','criadora','pecuaria','rancheiro','rancheira'])PROF_ALIAS[norm(a)]='pecuarista';for(const a of['cacador','cacadora','cacador de cervos','arqueiro','arqueira'])PROF_ALIAS[norm(a)]='cacador';for(const a of['polisonografista','polissonografia','tecnico em polissonografia','tecnica em polissonografia','tecnico do sono','tecnica do sono'])PROF_ALIAS[norm(a)]='polissonografista';
@@ -4476,7 +4517,7 @@ else if(['people','family','events'].includes(a))show(a);else if(a==='cinema')ci
  const update=()=>{toggle.textContent=LEARN_ENABLED?'🟢 Ligado — desativar':'⚪ Desligado — ativar'};
  toggle.onclick=()=>{LEARN_ENABLED=!LEARN_ENABLED;learnPersist();update()};
  reset.onclick=()=>{LEARN_DATA={};for(const n of npcs)delete n._learnTrip;learnPersist();notice('Aprendizado dos passeios apagado')};
- wrap.append(label,info,toggle,reset);panel.appendChild(wrap);update();
+ wrap.append(label,info,toggle,reset);wrap.dataset.tab='settings';wrap.hidden=!document.querySelector('.ptabs [data-ptab="settings"][aria-selected="true"]');panel.appendChild(wrap);update();
 })();
 addEventListener('beforeunload',persist);document.addEventListener('visibilitychange',()=>{if(document.hidden)persist()});
 })();
