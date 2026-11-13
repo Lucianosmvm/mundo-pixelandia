@@ -2767,7 +2767,11 @@ function pxStoryOverlay(g,w,h,age){
   const sections=REC.customStudio.sections,section=sections.find(x=>age>=x.start&&age<x.start+x.duration)||sections.at(-1);
   const lines=section.lines;
   if(!lines.length)return;
-  const elapsed=Math.max(0,age-section.start),msg=lines[Math.min(lines.length-1,Math.floor(elapsed/section.duration*lines.length))];
+  const li=Math.min(lines.length-1,Math.floor(elapsed0(age,section)/section.duration*lines.length)),msg=lines[li];
+  if(REC.chapter){
+   drawChapterBadge(g,w,h,REC.chapter);
+   if(section===sections.at(-1)&&li===lines.length-1){drawWelcomeCard(g,w,h,msg,'',.24,'dark');return}
+  }
   pxDrawStoryText(g,w,h,msg);return;
  }
  const parts=REC.story||(REC.story=pxStoryText());
@@ -2804,6 +2808,7 @@ function pxStoryOverlay(g,w,h,age){
  }if(!msg)return;
  pxDrawStoryText(g,w,h,msg);
 }
+function elapsed0(age,section){return Math.max(0,age-section.start)}
 function pxDrawStoryText(g,w,h,msg){
  drawWelcomeCard(g,w,h,msg,'',.24);
 }
@@ -3009,7 +3014,8 @@ async function finishRec(R0){
   const arrivalNpc=R0.arrivalId?npcs.find(x=>x.id===R0.arrivalId):null;
   const arrivalLabel=arrivalNpc?arrivalNpc.name.replace(/[^\p{L}\p{N}-]+/gu,'-').toLowerCase():null;
   const videoDay=R0.dayRecap?.closingDay||R0.recordDay;
-  const kind={vote:'votacao',recap:'resumo',welcome:'boas-vindas',episode:'episodio',event:'evento',resident:'morador',free:'passeio'}[R0.studioMode]||'video';
+  const kind={vote:'votacao',recap:'resumo',welcome:'boas-vindas',episode:'episodio',event:'evento',resident:'morador',free:'passeio',chapter:'capitulo-'+(R0.chapter?.n||'')}[R0.studioMode]||'video';
+  if(R0.chapter)chapterAdvance(R0.chapter);
   const fileBase=R0.welcomeReplay?`pixelandia-dia-${videoDay}-boas-vindas`:arrivalLabel?`pixelandia-chegada-${arrivalLabel}`:R0.inviteSeconds?'pixelandia-convite-mundo-vazio':`pixelandia-dia-${videoDay}-${kind}`;
   modal(`<h3><span>🎬 Vídeo pronto!</span><button class="btn sm" id="mX">✕</button></h3><video src="${url}" controls playsinline style="width:100%;max-height:55vh;background:#000;border-radius:6px"></video>
     <p style="font-size:13px;margin:6px 0">${secs}s · ${mb} MB · formato ${R0.ext.toUpperCase()} · ${R0.c.width>R0.c.height?'horizontal 16:9':'vertical 9:16'}</p>
@@ -3027,8 +3033,13 @@ async function finishRec(R0){
   $('vCopy').onclick=async()=>{
    const names=(R0.welcomeReplay?.ids||[arrivalNpc?.id]).map(id=>npcs.find(n=>n.id===id)?.name).filter(Boolean);
    const vote=R0.vote?.options.map((key,i)=>`${i+1}. ${BT[key].label}`).join('\n');
-   const title=vote?'Qual será a próxima obra de Pixelândia?':names.length?'Novos moradores em Pixelândia':R0.dayRecap?`Da noite ao amanhecer em Pixelândia · Dia ${videoDay}`:`Mundo Pixelândia · Dia ${videoDay}`;
-   const detail=vote?`${vote}\n\nVote nos comentários com 1, 2 ou 3.`:names.length?`Boas-vindas a ${names.join(', ')}!\n\nComente seu nome e profissão para morar na vila.`:`${R0.dayRecap?.highlight?.t||'Acompanhe a vida em Pixelândia.'}\n\nComente seu nome e profissão para morar na vila.`;
+   const ch=R0.chapter;
+   const title=ch?`${villageName} #${ch.n}: ${ch.title}`:vote?'Qual será a próxima obra de Pixelândia?':names.length?'Novos moradores em Pixelândia':R0.dayRecap?`Da noite ao amanhecer em Pixelândia · Dia ${videoDay}`:`Mundo Pixelândia · Dia ${videoDay}`;
+   const detail=ch?`Parte ${ch.step+1} de ${ch.parts} · ${CHAPTER_ARCS[ch.arc].label}
+
+${ch.goal}
+
+Comente seu nome e profissão para morar na vila.`:vote?`${vote}\n\nVote nos comentários com 1, 2 ou 3.`:names.length?`Boas-vindas a ${names.join(', ')}!\n\nComente seu nome e profissão para morar na vila.`:`${R0.dayRecap?.highlight?.t||'Acompanhe a vida em Pixelândia.'}\n\nComente seu nome e profissão para morar na vila.`;
    const copy=title+'\n\n'+detail;
    try{await navigator.clipboard.writeText(copy);$('vMsg').textContent='Título e descrição copiados.'}
    catch(e){prompt('Copie o título e a descrição',copy)}
@@ -3110,7 +3121,7 @@ const PUNCH_SEEN=new Map();
 let PUNCH_SCALE=1;
 function punchAge(key){
  const now=performance.now();let e=PUNCH_SEEN.get(key);
- if(!e||now-e.last>700){
+ if(!e||now-e.last>2500){
   e={at:now,last:now};PUNCH_SEEN.delete(key);PUNCH_SEEN.set(key,e);
   if(PUNCH_SEEN.size>80)PUNCH_SEEN.delete(PUNCH_SEEN.keys().next().value);
  }
@@ -3445,18 +3456,138 @@ function mountSceneBuilder(mode){
   editor.oninput();text.value='';status.textContent='Card adicionado ao roteiro.';
  };
 }
+// ================== CAPÍTULOS DA SÉRIE ==================
+// Histórias em partes: cada vídeo é um capítulo numerado, termina com um gancho
+// para o próximo e uma meta para os inscritos. Tokens: {vila} {n} {pop} {heroi} {meta}.
+const CHAPTER_ARCS={
+ ameaca:{icon:'🔥',label:'Ameaça na vila',steps:[
+  {ev:'rain',title:'uma tempestade nunca vista chegou',
+   vila:['Tudo parecia calmo em {vila}…','Até que o céu ficou escuro 😨'],
+   evento:['⛈️ Uma tempestade nunca vista!','Os {pop} moradores correram para casa!'],
+   final:['Mas a tempestade deixou um rastro…','E o pior ainda está por vir 😱'],
+   goal:'{meta} curtidas e eu mostro o que aconteceu!'},
+  {ev:'fire',title:'a vila está pegando fogo!',
+   vila:['No capítulo anterior: a tempestade…','Um raio caiu bem no meio da vila!'],
+   evento:['🔥 A vila está pegando fogo!','Precisamos de heróis!'],
+   final:['Quem vai salvar a vila?','Comente HERÓI e você pode ser o escolhido 🦸'],
+   goal:'{meta} curtidas para revelar o herói!'},
+  {ev:'party',title:'{heroi} salvou a vila!',
+   vila:['A vila quase foi destruída…','Mas alguém foi muito corajoso!'],
+   evento:['🦸 {heroi} salvou a vila!','Hoje tem festa para o herói!'],
+   final:['A vila está em paz… por enquanto 👀','Qual será a próxima ameaça?'],
+   goal:'Comente o que deve acontecer agora 👇'}]},
+ visitante:{icon:'👽',label:'Visitante misterioso',steps:[
+  {ev:'snow',title:'nevou no meio do verão?!',
+   vila:['Algo muito estranho em {vila}…','Começou a nevar do nada ❄️'],
+   evento:['❄️ Neve no meio do verão?!','Os moradores não entendem nada!'],
+   final:['E à noite… uma luz apareceu no céu 👀','Alguém está vindo nos visitar'],
+   goal:'{meta} curtidas e eu revelo quem é!'},
+  {ev:'ufo',title:'um OVNI pousou na vila!',
+   vila:['A luz no céu era real…','E ela está descendo!'],
+   evento:['👽 Um OVNI chegou na vila!','Ele está procurando alguém…'],
+   final:['Um morador foi levado! 😱','Será que ele vai voltar?'],
+   goal:'{meta} curtidas para trazer o morador de volta!'},
+  {ev:'party',title:'{heroi} voltou do espaço!',
+   vila:['Todo mundo estava preocupado…','Até que uma nave apareceu de novo!'],
+   evento:['🚀 {heroi} voltou do espaço!','A vila inteira foi comemorar!'],
+   final:['Mas ele trouxe um segredo 🤫','Vocês querem saber qual é?'],
+   goal:'Comente SEGREDO para o próximo capítulo 👇'}]},
+ fuga:{icon:'🐔',label:'A grande fuga',steps:[
+  {ev:'chickens',title:'as galinhas fugiram!',
+   vila:['O galinheiro de {vila} estava aberto…','E agora é tarde demais 😨'],
+   evento:['🐔 As galinhas invadiram a vila!','Quem pegar mais vira campeão!'],
+   final:['Ainda tem galinha escondida por aí…','Quem será o campeão?'],
+   goal:'{meta} curtidas para revelar o campeão!'},
+  {ev:'party',title:'{heroi} é o campeão das galinhas!',
+   vila:['A caçada acabou!','E temos um vencedor…'],
+   evento:['🏆 {heroi} pegou mais galinhas!','Festa na praça para o campeão!'],
+   final:['Na próxima, pode ser você 👀','Comente seu nome para morar na vila!'],
+   goal:'Segue para não perder o próximo capítulo!'}]}
+};
+const CHAPTER_KEY='pixelandia-chapter';
+const CHAPTER={n:1,arc:'ameaca',step:0,meta:500};
+try{const c=JSON.parse(localStorage.getItem(CHAPTER_KEY)||'null');if(c){if(Number.isInteger(c.n)&&c.n>0)CHAPTER.n=c.n;if(CHAPTER_ARCS[c.arc])CHAPTER.arc=c.arc;if(Number.isInteger(c.step)&&c.step>=0&&c.step<CHAPTER_ARCS[CHAPTER.arc].steps.length)CHAPTER.step=c.step;if([100,300,500,1000].includes(c.meta))CHAPTER.meta=c.meta}}catch(e){}
+function chapterSave(){try{localStorage.setItem(CHAPTER_KEY,JSON.stringify(CHAPTER))}catch(e){}}
+function chapterHero(){
+ const pool=npcs.filter(n=>n.active&&n.fan);
+ const list=pool.length?pool:npcs.filter(n=>n.active);
+ return list.length?list[Math.floor(Math.random()*list.length)].name:'Um morador';
+}
+function chapterPlan(hero){
+ const arc=CHAPTER_ARCS[CHAPTER.arc],step=arc.steps[CHAPTER.step];
+ hero=hero||chapterHero();
+ const fill=t=>t.replace(/\{vila\}/g,villageName).replace(/\{n\}/g,CHAPTER.n).replace(/\{pop\}/g,fmt(npcs.length)).replace(/\{heroi\}/g,hero).replace(/\{meta\}/g,fmt(CHAPTER.meta));
+ let ev=step.ev;
+ if(ev==='fire'&&!buildings.some(b=>b.done&&!BT[b.type].open&&!(b.fire>0)))ev='rain';
+ const title=fill(step.title);
+ const scenes=[
+  {cmd:'CENA: VILA',lines:['📺 '+villageName+' #'+CHAPTER.n+'\n'+title,...step.vila.map(fill)]},
+  {cmd:'EVENTO',lines:step.evento.map(fill)},
+  {cmd:'CENA: FINAL',lines:[...step.final.map(fill),fill(step.goal)]}
+ ];
+ return {n:CHAPTER.n,arc:CHAPTER.arc,step:CHAPTER.step,parts:arc.steps.length,ev,title,hero,goal:fill(step.goal),scenes};
+}
+function chapterAdvance(plan){
+ if(CHAPTER.n!==plan.n||CHAPTER.arc!==plan.arc||CHAPTER.step!==plan.step)return;
+ CHAPTER.n++;
+ CHAPTER.step=(CHAPTER.step+1)%CHAPTER_ARCS[CHAPTER.arc].steps.length;
+ chapterSave();
+}
+function startRecChapter(){
+ const plan=chapterPlan();
+ startRec(false);if(!REC)return;
+ // Abre na praça, onde a multidão fica visível.
+ TOUR=null;follow=null;pinnedFollow=false;cam.x=CX*T+8;cam.y=CY*T+8;clampCam();
+ REC.chapter=plan;REC.hookKind=plan.ev;REC.ev={k:plan.ev,t0:performance.now(),seen:false};
+ studioScriptAttach(plan.scenes,'chapter');
+ const R0=REC;setTimeout(()=>{if(REC===R0)startEvent(plan.ev)},REC.customStudio.mainStart*1000);
+}
+function chapterFields(){
+ const arcs=Object.entries(CHAPTER_ARCS).map(([k,a])=>`<option value="${k}">${a.icon} ${esc(a.label)} · ${a.steps.length} partes</option>`).join('');
+ return `<div class="bgrp">📖 Capítulo da série</div><p class="tip">Cada vídeo é uma parte da história, termina com um gancho e pede uma meta aos inscritos. Ao salvar o vídeo, o número e a parte avançam sozinhos.</p>
+ <label for="stChArc">História</label><select class="in" id="stChArc">${arcs}</select>
+ <label for="stChStep">Parte</label><select class="in" id="stChStep"></select>
+ <label for="stChNum">Número do episódio</label><input class="in" type="number" min="1" max="9999" id="stChNum">
+ <label for="stChMeta">Meta de curtidas</label><select class="in" id="stChMeta">${[100,300,500,1000].map(v=>`<option value="${v}">${fmt(v)} curtidas</option>`).join('')}</select>
+ <p class="tip" id="stChTitle"></p>`;
+}
+function chapterBind(){
+ const arc=$('stChArc'),step=$('stChStep'),num=$('stChNum'),meta=$('stChMeta');
+ const fillSteps=()=>{const a=CHAPTER_ARCS[CHAPTER.arc];step.replaceChildren(...a.steps.map((st,i)=>new Option(`Parte ${i+1} · ${st.title.replace('{heroi}','herói')}`,String(i))));step.value=String(CHAPTER.step)};
+ const show=()=>{const p=chapterPlan('{herói}');$('stChTitle').textContent='Título sugerido: '+villageName+' #'+p.n+': '+p.title+(p.ev!==CHAPTER_ARCS[p.arc].steps[p.step].ev?' · sem prédios prontos, o incêndio vira tempestade':'')};
+ arc.value=CHAPTER.arc;fillSteps();num.value=String(CHAPTER.n);meta.value=String(CHAPTER.meta);show();
+ arc.onchange=()=>{CHAPTER.arc=arc.value;CHAPTER.step=0;fillSteps();chapterSave();show()};
+ step.onchange=()=>{CHAPTER.step=Number(step.value);chapterSave();show()};
+ num.onchange=()=>{const v=Math.floor(Number(num.value));if(v>=1&&v<=9999)CHAPTER.n=v;num.value=String(CHAPTER.n);chapterSave();show()};
+ meta.onchange=()=>{CHAPTER.meta=Number(meta.value);chapterSave();show()};
+}
+function chapterPreview(){
+ const p=chapterPlan('{herói sorteado}');
+ const names={'CENA: VILA':'Abertura','EVENTO':'Acontecimento','CENA: FINAL':'Gancho e meta'};
+ const rows=p.scenes.map(sc=>'<li><b>'+names[sc.cmd]+'</b><br>'+sc.lines.map(l=>esc(l.replace('\n',' · '))).join('<br>')+'</li>').join('');
+ modal('<h3><span>📖 '+esc(villageName)+' #'+p.n+'</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Parte '+(p.step+1)+' de '+p.parts+' · cerca de 35 segundos</p><ol>'+rows+'</ol><button class="btn" id="stBack">Voltar ao Estúdio</button>');
+ $('mX').onclick=$('stBack').onclick=openRecMenu;
+}
+function drawChapterBadge(g,w,h,chapter){
+ const s=w/720,label='📺 #'+chapter.n+' · PARTE '+(chapter.step+1)+'/'+chapter.parts;
+ g.save();g.font=`700 ${22*s}px "Pixelify Sans",sans-serif`;g.textAlign='left';g.textBaseline='middle';
+ const tw=g.measureText(label).width+28*s,x=16*s,y=h*.74;
+ g.fillStyle='rgba(16,10,4,.72)';rr(g,x,y,tw,40*s,20*s);g.fill();
+ g.fillStyle='#ffd23f';g.fillText(label,x+14*s,y+21*s);g.restore();
+}
 function studioScriptAttach(scenes,mode){
  if(!REC||!scenes)return;
- const sections=scenes.map(x=>{const c=cameraScriptExtract(x.lines);return {cmd:x.cmd,lines:c.lines,cues:c.cues,duration:Math.max(5,Math.ceil(c.lines.join(' ').length/12)+2)+c.extra}});
+ // Capítulos trocam de legenda a cada ~3 s, como nos Shorts.
+ const sections=scenes.map(x=>{const c=cameraScriptExtract(x.lines);return {cmd:x.cmd,lines:c.lines,cues:c.cues,duration:(mode==='chapter'?Math.max(4,c.lines.length*3):Math.max(5,Math.ceil(c.lines.join(' ').length/12)+2))+c.extra}});
  const key=mode==='vote'?'VOTACAO':'EVENTO';
  const main=sections.find(x=>x.cmd===key);
- const mainMin=mode==='vote'?STUDIO.voteSeconds:({rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[STUDIO.event]||60);
+ const mainMin=mode==='vote'?STUDIO.voteSeconds:mode==='chapter'?14:({rain:22,snow:22,party:45,chickens:70,fire:90,ufo:40}[STUDIO.event]||60);
  main.duration=Math.max(main.duration,mainMin);
  let t=0;for(const section of sections){section.start=t;t+=section.duration}
  REC.cameraTimeline=cameraScriptTimeline(scenes.map((scene,i)=>({...scene,duration:sections[i].duration})),0);
  REC.customStudio={mode,sections,duration:t,mainStart:main.start,mainDuration:main.duration};
  if(mode==='vote'){REC.vote.seconds=t;REC.vote.start=main.start;REC.vote.visualSeconds=main.duration}
- if(mode==='event'){REC.ev.t0=REC.start+main.start*1000;REC.ev.scripted=true}
+ if(mode==='event'||mode==='chapter'){REC.ev.t0=REC.start+main.start*1000;REC.ev.scripted=true}
 }
 function scriptParse(raw){
  const scenes=[];let scene=null;
@@ -3709,7 +3840,7 @@ function studioEventOutline(){
  $('mX').onclick=openRecMenu;
 }
 function openRecMenu(){
- const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['recap','🌙','Resumo do dia','Um destaque, a noite na vila e o amanhecer'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
+ const modes=[['vote','🗳️','Escolha a próxima obra','3 opções para os inscritos votarem nos comentários'],['invitation','🌍','Convite ao mundo','Apresente a vila vazia e convide inscritos'],['welcome','🎉','Boas-vindas','Apresente os novos moradores da comunidade'],['recap','🌙','Resumo do dia','Um destaque, a noite na vila e o amanhecer'],['chapter','📖','Capítulo da série','História em partes, com gancho e meta de curtidas'],['episode','📺','Episódio','Acompanhe o crescimento da vila'],['event','🔥','Evento especial','Casamentos, festivais e acontecimentos'],['resident','👤','História de morador','Acompanhe um inscrito na vila'],['free','🎥','Câmera livre','Grave livremente ou faça um passeio']];
  const card=modes.map(([id,ic,name,desc])=>`<button type="button" class="bopt studio-mode ${STUDIO.mode===id?'studio-selected':''}" data-studio="${id}"><span class="bi">${ic}</span><span class="bl">${name}</span><span class="bc">${desc}</span></button>`).join('');
  modal(`<h3><span>🎬 Estúdio Pixelândia</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Escolha o conteúdo, ajuste a gravação e comece seu vídeo.</p>
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
@@ -3784,6 +3915,7 @@ function openRecMenu(){
  <button type="button" class="btn sm" id="stScriptExample">✨ Gerar modelo</button></div></div>`;
  }
  if(STUDIO.mode==='vote'){extra=`<div class="bgrp">🗳️ Votação da próxima construção</div><p class="tip">Selecione três obras do catálogo. O vídeo conta a história da vila antes de mostrar os três cards de votação.</p>${[0,1,2].map(i=>`<label for="stVote${i}">Opção ${i+1}</label><select class="in" id="stVote${i}">${VOTE_BUILDINGS.map(([key,b])=>`<option value="${key}">${b.icon} ${esc(b.label)}</option>`).join('')}</select>`).join('')}<label>Duração do Short</label><select class="in" id="stVoteSeconds"><option value="20">20 segundos</option><option value="30">30 segundos</option></select><p class="tip">O vídeo não contabiliza votos automaticamente. Confira os comentários do YouTube e construa a mais votada no jogo.</p>`;}
+ if(STUDIO.mode==='chapter'){extra=chapterFields()}
  if(STUDIO.mode==='resident'){extra='<label for="stResidentSearch">Buscar morador</label><input class="in" type="search" id="stResidentSearch" placeholder="Digite parte do nome"><label for="stResident">Morador em destaque</label><select class="in" id="stResident"></select>'}
  if(STUDIO.mode==='vote'||STUDIO.mode==='event'){
   const mode=STUDIO.mode;
@@ -3850,6 +3982,7 @@ function openRecMenu(){
   mountSceneBuilder('welcome');
  }
  if($('stVoteSeconds')){$('stVoteSeconds').value=String(STUDIO.voteSeconds);$('stVoteSeconds').onchange=()=>STUDIO.voteSeconds=Number($('stVoteSeconds').value);for(let i=0;i<3;i++){const field=$('stVote'+i);field.value=STUDIO.voteOptions[i];field.onchange=()=>STUDIO.voteOptions[i]=field.value;}}
+ if($('stChArc'))chapterBind();
  if($('stEvent')){$('stEvent').value=STUDIO.event;$('stEvent').onchange=e=>STUDIO.event=e.target.value}
  if($('stResident')){
   const field=$('stResident'),search=$('stResidentSearch');
@@ -3866,6 +3999,7 @@ function openRecMenu(){
  }
  update();
  $('stStart').onclick=()=>{if(STUDIO.mode==='recap'){startDayRecap(recapHighlight);return}if(STUDIO.mode==='vote'){const vote=votePlan();if(vote)startVoteRecording(vote);return;}if(STUDIO.mode==='invitation'){inviteRecord();return}
+ if(STUDIO.mode==='chapter'){ARRIVALS.active=false;closeModal();const oldSound=soundRec;soundRec=STUDIO.music;STUDIO.restoreSound=oldSound;startRecChapter();if(!REC){soundRec=oldSound;delete STUDIO.restoreSound}return}
  const mode=STUDIO.mode,resident=mode==='resident'?npcs.find(n=>n.id===Number(STUDIO.resident)):null;
  if(mode==='resident'&&!resident){alert('Escolha um morador para gravar.');return}
  const eventScenes=mode==='event'?studioScriptRead('event'):null;if(eventScenes===false)return;
@@ -3879,6 +4013,7 @@ function openRecMenu(){
   if(STUDIO.mode==='vote'){const vote=votePlan();if(vote)votePreview(vote);return}
   if(STUDIO.mode==='invitation'){INVITE_PREVIEW_CAM={x:cam.x,y:cam.y,z:cam.z};INVITE_PREVIEW_FOLLOW=follow;INVITE_PREVIEW_PIN=pinnedFollow;invitePreview();return}
   if(STUDIO.mode==='welcome'){welcomeGroupPreview();return}
+  if(STUDIO.mode==='chapter'){chapterPreview();return}
   if(STUDIO.mode==='resident'){studioResidentPreview();return}
   if(STUDIO.mode==='event'){studioEventOutline();return}
   closeModal();if(!$('panel').classList.contains('hidden'))togglePanel();startTour();
