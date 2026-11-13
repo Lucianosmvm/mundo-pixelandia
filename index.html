@@ -3918,6 +3918,14 @@ function drawHook(g,W2,H2,s,text,age){
  g.restore();
 }
 
+// Inicialização do formulário de moradores (também usado sem gravação de vídeo).
+let sex='m';
+const sel=$('fProf');
+for(const [key,p] of Object.entries(PROF)){
+ const option=document.createElement('option');option.value=key;option.textContent=p.icon+' '+p.label;sel.appendChild(option);
+}
+const customOption=document.createElement('option');customOption.value='custom';customOption.textContent='⭐ Outra profissão...';sel.appendChild(customOption);
+sel.onchange=()=>{$('fCustom').style.display=sel.value==='custom'?'block':'none'};
 function updateProfLabels(){for(const o of sel.options){const P=PROF[o.value];if(P)o.textContent=P.icon+' '+(sex==='f'?P.labelF:P.label)}}
 document.querySelectorAll('[data-sex]').forEach(b=>b.onclick=()=>{sex=b.dataset.sex;document.querySelectorAll('[data-sex]').forEach(x=>x.classList.toggle('on',x===b));updateProfLabels()});
 let formPet=null;
