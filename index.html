@@ -332,7 +332,7 @@ let simT=0, spawn={x:CX,y:H-1}, timeScale=1, follow=null, followUntil=0, gtime=0
 let activeMax=200, activeCount=0, homeless=0, npcVer=0, profCount={}, absAcc={};
 const reserved=new Map(), bById=new Map();
 let goalIdx=0, hooks={wed:0,kid:0,gos:0}, flash=0, lastSnapK=-1;
-const EV={rain:0,snow:0,party:0,fire:null,fireT:0,chickens:[],chickT:0,chickCount:null,ufo:null,launch:null};
+const EV={gather:0,rain:0,snow:0,party:0,fire:null,fireT:0,chickens:[],chickT:0,chickCount:null,ufo:null,launch:null};
 
 function hour(){return (mins%1440)/60}
 function day(){return Math.floor(mins/1440)+1}
@@ -720,6 +720,8 @@ function think(n){
   if(EV.fire&&(n.prof==='bombeiro'||(!isNight()&&nearFire(n)&&Math.random()<0.6))&&fightFire(n))return;
   if(EV.party>0&&Math.random()<0.85){if(n.inside)n.inside=false;n.sleeping=false;if(n.carry&&n.carryRes)deposit(n,true);n.carry=null;
     n.status='Na festa! 🎉';n.plan=n.prof==='musico'?[goNear(CX,CY,3),work(rnd(6,10),'play',null)]:[goNear(CX,CY,5),work(rnd(5,9),'dance',null)];sayLine2(n,['Uhuul! 🎉','Que festa!','Bora dançar!','Arraiá! 🎆'],0.3);return}
+  if(EV.gather>0&&!EV.party&&Math.random()<0.8){if(n.inside)n.inside=false;n.sleeping=false;if(n.carry&&n.carryRes)deposit(n,true);n.carry=null;
+    n.status='Na praça 👀';n.plan=[goNear(CX,CY,6),work(rnd(4,7),null,null)];sayLine2(n,['Vocês viram isso?','O que está acontecendo?','😨','Olha o céu!','Corre aqui!'],0.25);return}
   if(EV.chickens.length&&!isNight()&&Math.random()<0.65&&chase(n))return;
   if(n.prof==='polissonografista'&&!isNight()&&hour()<11.5){planSleep(n);if(!n.inside)n.status='Indo dormir de dia 😴 (trabalhou a noite toda)';else n.status='Dormindo de dia 😴 trabalhou a noite toda';return}
   if(n.prof==='polissonografista'&&isNight()){if(n.inside)n.inside=false;n.sleeping=false;if(aiSleepTech(n))return}
@@ -1892,11 +1894,12 @@ function startEvent(k){
     EV.ufo={x:cam.x-cw/2/cam.z-60,y:t.y-120,tid:t.id,phase:'in',t:0};follow=t.id;pinnedFollow=true;announce('👽 OVNI AVISTADO!','Ele está procurando alguém...')}
   const e=EVENTS.find(x=>x[0]===k);if(e)logEv(`🗳️ O chat votou: ${e[1]} ${e[2]}`);
 }
-function stopEvents(){EV.rain=0;EV.snow=0;EV.party=0;const b=bById.get(EV.fire);if(b)extinguish(b,true);EV.fire=null;EV.chickens=[];EV.chickCount=null;logEv('⏹ Eventos encerrados')}
+function stopEvents(){EV.gather=0;EV.rain=0;EV.snow=0;EV.party=0;const b=bById.get(EV.fire);if(b)extinguish(b,true);EV.fire=null;EV.chickens=[];EV.chickCount=null;logEv('⏹ Eventos encerrados')}
 function updateEvents(dt){
   flash=Math.max(0,flash-dt*3);
   if(EV.rain>0){EV.rain-=dt;if(Math.random()<dt*0.18){flash=1;sfx('thunder')}if(EV.rain<=0)logEv('🌤️ A tempestade passou')}
   if(EV.snow>0){EV.snow-=dt;if(EV.snow<=0)logEv('☀️ A neve derreteu')}
+  if(EV.gather>0)EV.gather=Math.max(0,EV.gather-dt);
   if(EV.party>0){EV.party-=dt;if(Math.random()<dt*2.2)firework();if(EV.party<=0){EV.party=0;logEv('🎉 Que festa! Todo mundo voltou ao trabalho')}}
   const fb=EV.fire&&bById.get(EV.fire);
   if(fb){EV.fireT+=dt;if(EV.rain>0)fb.fire-=dt*4;if(Math.random()<dt*5)particles.push({x:(fb.x+Math.random()*fb.w)*T,y:fb.y*T-8,vx:rnd(-4,4),vy:-16,life:2.5,max:2.5,type:'smoke',size:3});
@@ -2817,6 +2820,7 @@ function recFrame(now){
   if(!REC)return;const rc=REC.c,g=REC.g,W2=rc.width,H2=rc.height,s=W2/720;
   const sw=cv.width,sh=cv.height,ratio=W2/H2;let cw2=sw,ch2=sw/ratio;if(ch2>sh){ch2=sh;cw2=sh*ratio}
   g.imageSmoothingEnabled=true;g.drawImage(cv,(sw-cw2)/2,(sh-ch2)/2,cw2,ch2,0,0,W2,H2);
+  drawRecMood(g,W2,H2,now);
   // cabeçalho
   if(STUDIO.hud&&REC.studioMode!=='invitation') {
   g.fillStyle='rgba(30,18,8,.74)';const HY=H2*SAFE.top+6*s;rr(g,24*s,HY,W2-48*s,112*s,16*s);g.fill();g.lineWidth=3*s;g.strokeStyle='#e9b768';g.stroke();
@@ -3473,7 +3477,7 @@ const CHAPTER_ARCS={
    goal:'{meta} curtidas para revelar o herói!'},
   {ev:'party',title:'{heroi} salvou a vila!',
    vila:['A vila quase foi destruída…','Mas alguém foi muito corajoso!'],
-   evento:['🦸 {heroi} salvou a vila!','Hoje tem festa para o herói!'],
+   evento:['🦸 Quem salvou a vila foi…\n{heroi}!','Hoje tem festa para o herói!'],
    final:['A vila está em paz… por enquanto 👀','Qual será a próxima ameaça?'],
    goal:'Comente o que deve acontecer agora 👇'}]},
  visitante:{icon:'👽',label:'Visitante misterioso',steps:[
@@ -3489,7 +3493,7 @@ const CHAPTER_ARCS={
    goal:'{meta} curtidas para trazer o morador de volta!'},
   {ev:'party',title:'{heroi} voltou do espaço!',
    vila:['Todo mundo estava preocupado…','Até que uma nave apareceu de novo!'],
-   evento:['🚀 {heroi} voltou do espaço!','A vila inteira foi comemorar!'],
+   evento:['🚀 Voltou do espaço:\n{heroi}!','A vila inteira foi comemorar!'],
    final:['Mas ele trouxe um segredo 🤫','Vocês querem saber qual é?'],
    goal:'Comente SEGREDO para o próximo capítulo 👇'}]},
  fuga:{icon:'🐔',label:'A grande fuga',steps:[
@@ -3500,7 +3504,7 @@ const CHAPTER_ARCS={
    goal:'{meta} curtidas para revelar o campeão!'},
   {ev:'party',title:'{heroi} é o campeão das galinhas!',
    vila:['A caçada acabou!','E temos um vencedor…'],
-   evento:['🏆 {heroi} pegou mais galinhas!','Festa na praça para o campeão!'],
+   evento:['🏆 O campeão das galinhas é\n{heroi}!','Festa na praça para o campeão!'],
    final:['Na próxima, pode ser você 👀','Comente seu nome para morar na vila!'],
    goal:'Segue para não perder o próximo capítulo!'}]}
 };
@@ -3538,6 +3542,8 @@ function startRecChapter(){
  startRec(false);if(!REC)return;
  // Abre na praça, onde a multidão fica visível.
  TOUR=null;follow=null;pinnedFollow=false;cam.x=CX*T+8;cam.y=CY*T+8;clampCam();
+ // Moradores se reúnem na praça no começo do capítulo (a festa já faz isso sozinha).
+ if(plan.ev!=='party'){EV.gather=12;for(const n of npcs)if(n.active){n.plan=[];n.step=null;n.idle=Math.random()*1.2}}
  REC.chapter=plan;REC.hookKind=plan.ev;REC.ev={k:plan.ev,t0:performance.now(),seen:false};
  studioScriptAttach(plan.scenes,'chapter');
  const R0=REC;setTimeout(()=>{if(REC===R0)startEvent(plan.ev)},REC.customStudio.mainStart*1000);
@@ -3567,6 +3573,82 @@ function chapterPreview(){
  const rows=p.scenes.map(sc=>'<li><b>'+names[sc.cmd]+'</b><br>'+sc.lines.map(l=>esc(l.replace('\n',' · '))).join('<br>')+'</li>').join('');
  modal('<h3><span>📖 '+esc(villageName)+' #'+p.n+'</span><button class="btn sm" id="mX">✕</button></h3><p class="tip">Parte '+(p.step+1)+' de '+p.parts+' · cerca de 35 segundos</p><ol>'+rows+'</ol><button class="btn" id="stBack">Voltar ao Estúdio</button>');
  $('mX').onclick=$('stBack').onclick=openRecMenu;
+}
+// ================== CLIMA VISUAL DOS VÍDEOS ==================
+// Camadas desenhadas só no vídeo gravado: ameaça (vermelho e brasas), mistério
+// (azul escuro e brilhos), vitória (luz dourada e confete) e nuvens de revelação.
+const MOOD_BY_EVENT={rain:'threat',fire:'threat',chickens:'threat',ufo:'mystery',snow:'mystery',party:'victory'};
+function recMoodTarget(age){
+ if(!REC)return {mood:null,reveal:null};
+ if(REC.chapter&&REC.customStudio){
+  const secs=REC.customStudio.sections,ev=REC.chapter.ev,main=MOOD_BY_EVENT[ev]||null;
+  const sec=secs.find(x=>age>=x.start&&age<x.start+x.duration)||secs.at(-1);
+  const reveal=ev==='party'||ev==='ufo'?secs[1].start:null;
+  if(sec===secs[0])return {mood:ev==='party'?null:'mystery',reveal};
+  if(sec===secs[1])return {mood:main,reveal};
+  return {mood:ev==='party'?'victory':main==='mystery'?'mystery':'threat',reveal};
+ }
+ if(REC.ev&&REC.studioMode==='event')return {mood:evActive(REC.ev.k)?MOOD_BY_EVENT[REC.ev.k]||null:null,reveal:null};
+ return {mood:null,reveal:null};
+}
+function drawRecMood(g,w,h,now){
+ if(!REC)return;
+ const fx=REC.moodFx||(REC.moodFx={threat:0,mystery:0,victory:0,parts:[],last:now});
+ const dt=Math.min(.1,Math.max(0,(now-fx.last)/1000));fx.last=now;
+ const age=(now-REC.start)/1000,{mood,reveal}=recMoodTarget(age),s=w/720;
+ for(const k of ['threat','mystery','victory'])fx[k]+=((mood===k?1:0)-fx[k])*Math.min(1,dt*2.2);
+ g.save();
+ if(fx.threat>.01){
+  const pulse=.85+.15*Math.sin(age*5);
+  g.globalAlpha=fx.threat;
+  g.fillStyle=`rgba(255,40,0,${.13*pulse})`;g.fillRect(0,0,w,h);
+  const vg=g.createRadialGradient(w/2,h/2,Math.min(w,h)*.3,w/2,h/2,Math.max(w,h)*.75);
+  vg.addColorStop(0,'rgba(120,10,0,0)');vg.addColorStop(1,`rgba(110,8,0,${.7*pulse})`);
+  g.fillStyle=vg;g.fillRect(0,0,w,h);
+  if(Math.random()<dt*28)fx.parts.push({k:'ember',x:Math.random()*w,y:h+10*s,vx:(Math.random()-.5)*30*s,vy:-(70+Math.random()*90)*s,r:(2+Math.random()*3)*s,life:2+Math.random()*2});
+ }
+ if(fx.mystery>.01){
+  g.globalAlpha=fx.mystery;
+  g.fillStyle='rgba(10,20,60,.22)';g.fillRect(0,0,w,h);
+  const vg=g.createRadialGradient(w/2,h/2,Math.min(w,h)*.28,w/2,h/2,Math.max(w,h)*.72);
+  vg.addColorStop(0,'rgba(5,10,40,0)');vg.addColorStop(1,'rgba(5,10,40,.75)');
+  g.fillStyle=vg;g.fillRect(0,0,w,h);
+  if(Math.random()<dt*10)fx.parts.push({k:'spark',x:Math.random()*w,y:Math.random()*h*.8,vx:0,vy:-8*s,r:(2+Math.random()*2)*s,life:1.2+Math.random()});
+ }
+ if(fx.victory>.01){
+  g.globalAlpha=fx.victory;
+  const lg=g.createRadialGradient(w/2,h*.35,0,w/2,h*.35,Math.max(w,h)*.7);
+  lg.addColorStop(0,'rgba(255,220,120,.28)');lg.addColorStop(1,'rgba(255,200,80,0)');
+  g.fillStyle=lg;g.fillRect(0,0,w,h);
+  if(Math.random()<dt*40)fx.parts.push({k:'confetti',x:Math.random()*w,y:-10*s,vx:(Math.random()-.5)*60*s,vy:(120+Math.random()*120)*s,r:(5+Math.random()*5)*s,rot:Math.random()*6,life:6,col:pick(['#ff5e5b','#ffd23f','#7cc04a','#4fc3f7','#c06cf0','#ff9ad5'])});
+ }
+ g.globalAlpha=1;
+ fx.parts=fx.parts.filter(p=>(p.life-=dt)>0&&p.y<h+40*s&&p.y>-40*s);
+ if(fx.parts.length>260)fx.parts.splice(0,fx.parts.length-260);
+ for(const p of fx.parts){
+  p.x+=p.vx*dt;p.y+=p.vy*dt;
+  if(p.k==='ember'){g.globalAlpha=Math.min(1,p.life)*fx.threat;g.fillStyle=p.life>1.2?'#ffd23f':'#ff6a1a';g.beginPath();g.arc(p.x,p.y,p.r,0,Math.PI*2);g.fill()}
+  else if(p.k==='spark'){g.globalAlpha=Math.min(1,p.life)*fx.mystery*(.5+.5*Math.sin(p.life*12));g.fillStyle='#bfe3ff';g.fillRect(p.x-p.r/2,p.y-p.r*2,p.r,p.r*4);g.fillRect(p.x-p.r*2,p.y-p.r/2,p.r*4,p.r)}
+  else{p.rot+=dt*6;g.globalAlpha=fx.victory;g.save();g.translate(p.x,p.y);g.rotate(p.rot);g.fillStyle=p.col;g.fillRect(-p.r/2,-p.r/4,p.r,p.r/2);g.restore()}
+ }
+ g.globalAlpha=1;
+ // Nuvens fecham a tela e se abrem revelando a cena.
+ if(reveal!=null){
+  const t=age-reveal,span=.9;
+  if(t>-span&&t<span){
+   const cover=1-Math.abs(t)/span,open=t>0?t/span:0;
+   g.fillStyle='rgba(255,255,255,'+(.35*cover)+')';g.fillRect(0,0,w,h);
+   for(let i=0;i<14;i++){
+    const ang=i/14*Math.PI*2+.4,bx=w/2+Math.cos(ang)*w*.32,by=h/2+Math.sin(ang)*h*.3;
+    const push=(1-cover)*Math.max(w,h)*.7,x=bx+Math.cos(ang)*push,y=by+Math.sin(ang)*push,r=Math.max(w,h)*(.2+(i%3)*.05);
+    g.globalAlpha=Math.min(1,cover*1.6)*(1-open*.3);
+    const puff=(px,py,pr)=>{g.moveTo(px+pr,py);g.arc(px,py,pr,0,Math.PI*2)};
+    g.fillStyle='#c9d4e2';g.beginPath();puff(x,y+r*.12,r);puff(x+r*.6,y+r*.27,r*.7);puff(x-r*.6,y+r*.32,r*.65);g.fill();
+    g.fillStyle='#f4f7fb';g.beginPath();puff(x,y,r);puff(x+r*.6,y+r*.15,r*.7);puff(x-r*.6,y+r*.2,r*.65);g.fill();
+   }
+  }
+ }
+ g.restore();
 }
 function drawChapterBadge(g,w,h,chapter){
  const s=w/720,label='📺 #'+chapter.n+' · PARTE '+(chapter.step+1)+'/'+chapter.parts;
@@ -4315,7 +4397,7 @@ function load(s){
   redrawAllGround();recount();assignHomes();if(!s.goalIdx){goalIdx=0;checkGoals(true)}
   DIST=s.dist||{};DAYLOG=s.daylog||[];distTick(true);dayMode=s.dayMode||'ep';epMin=s.epMin||20;document.querySelectorAll('[data-ep]').forEach(x=>x.classList.toggle('on',+x.dataset.ep===epMin));FF=null;document.querySelectorAll('[data-day]').forEach(x=>x.classList.toggle('on',x.dataset.day===dayMode));
 }
-function stopEventsQuiet(){EV.rain=0;EV.snow=0;EV.party=0;EV.fire=null;EV.chickens=[];EV.chickCount=null;EV.ufo=null;EV.launch=null}
+function stopEventsQuiet(){EV.gather=0;EV.rain=0;EV.snow=0;EV.party=0;EV.fire=null;EV.chickens=[];EV.chickCount=null;EV.ufo=null;EV.launch=null}
 // Vilas da versão antiga (mapa 80×60) são encaixadas no centro do mapa novo.
 function migrateV1(s){
   genWorld();const DX=40,DY=30,OW=80,OH=60;
