@@ -2500,7 +2500,7 @@ function drawArrivalTag(g,W2,H2,s,n,age){
   const enter=clamp(age/.35,0,1),leave=clamp((5.1-age)/.55,0,1),alpha=Math.min(enter,leave);
   if(alpha<=0)return;
   g.save();g.globalAlpha=alpha;
-  drawWelcomeCard(g,W2,H2,'🎉 '+n.name+' chegou!',profLabel(n)+(n.youtubeHandle?' · '+n.youtubeHandle:''),.23);
+  drawWelcomeCard(g,W2,H2,STUDIO.punch?'🎉 Chegou na vila\n'+n.name:'🎉 '+n.name+' chegou!',profLabel(n)+(n.youtubeHandle?' · '+n.youtubeHandle:''),.23);
   g.restore();
 }
 function drawShortsCTA(g,W2,H2,s,age,duration){
@@ -2694,7 +2694,7 @@ function welcomeStartBatch(replay=null){
   REC.arrivalSeconds=Math.max(seconds,...entries.map(x=>scriptDuration(cameraScriptExtract(x.lines).lines,12)+cameraScriptExtract(x.lines).extra));
  }
  REC.welcomeReplay=replay||{seed,ids:[...ARRIVALS.ids],style,scenes,seconds,result:STUDIO.welcomeResult,settings:{
-  format:STUDIO.format,camera:STUDIO.camera,captions:STUDIO.captions,music:STUDIO.music,hud:STUDIO.hud
+  format:STUDIO.format,camera:STUDIO.camera,captions:STUDIO.captions,punch:STUDIO.punch,hook:STUDIO.hook,music:STUDIO.music,hud:STUDIO.hud
  }};
  save();
  if(!replay){
@@ -2869,9 +2869,10 @@ function recFrame(now){
       }else if(age>=REC.arrivalSeconds+(REC.customWelcome?.ending||4))stopRec();
     }
   }
-  if(STUDIO.captions&&HOOK_ON&&hAge<3&&REC.studioMode!=='event'&&!REC.arrivalId&&!REC.inviteSeconds){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
+  const hookShowing=STUDIO.captions&&HOOK_ON&&hAge<3&&['episode','resident','free'].includes(REC.studioMode)&&!REC.arrivalId&&!REC.inviteSeconds&&!REC.vote&&!REC.groupWelcome&&!REC.customStudio;
+  if(hookShowing){if(!REC.hook)REC.hook=hookText(REC.hookKind);drawHook(g,W2,H2,s,REC.hook,hAge)}
   if(REC?.groupWelcome&&STUDIO.captions)drawWelcomeGroup(g,W2,H2,hAge,REC.groupWelcome);
- else if(REC&&!REC.vote&&REC.studioMode!=='vote'&&(!REC.auto||!TOUR))pxStoryOverlay(g,W2,H2,hAge);
+ else if(REC&&!REC.vote&&REC.studioMode!=='vote'&&(!REC.auto||!TOUR)&&!hookShowing)pxStoryOverlay(g,W2,H2,hAge);
   // No encerramento, esconder a legenda narrativa e manter o convite por cima.
   if(REC&&REC.arrivalId&&STUDIO.captions&&ARRIVALS.index===ARRIVALS.ids.length-1){
     const finalAge=(now-REC.arrivalStart)/1000-REC.arrivalSeconds;
@@ -3102,7 +3103,91 @@ function welcomeGroupTick(now){
  }
  if(age>=G.cta&&R===REC)startWelcomeUpdate(now);
 }
+// ================== LEGENDAS DE IMPACTO ==================
+// Duas linhas grandes: frase em branco com contorno e palavra-chave numa faixa colorida.
+// Cada texto novo "salta" na tela; a idade da animação é controlada pelo próprio texto.
+const PUNCH_SEEN=new Map();
+let PUNCH_SCALE=1;
+function punchAge(key){
+ const now=performance.now();let e=PUNCH_SEEN.get(key);
+ if(!e||now-e.last>700){
+  e={at:now,last:now};PUNCH_SEEN.delete(key);PUNCH_SEEN.set(key,e);
+  if(PUNCH_SEEN.size>80)PUNCH_SEEN.delete(PUNCH_SEEN.keys().next().value);
+ }
+ e.last=now;return (now-e.at)/1000;
+}
+function punchUpper(t){return String(t).split(/\s+/).map(w=>w.startsWith('@')?w:w.toLocaleUpperCase('pt-BR')).join(' ')}
+function punchSplit(title){
+ const raw=String(title);
+ // Divisão explícita: "linha de cima\nfaixa".
+ if(raw.includes('\n')){const [t,...rest]=raw.split('\n');return [punchUpper(t.trim()),punchUpper(rest.join(' ').trim())]}
+ const words=raw.trim().split(/\s+/).filter(Boolean);
+ // Listas de nomes e nomes próprios ficam inteiros na faixa.
+ if(raw.includes(' · ')||words.length<=2)return ['',punchUpper(words.join(' '))];
+ if(words.length<=4&&words.every(w=>/^[\p{Lu}@]/u.test(w)||/^(da|de|do|das|dos|e)$/.test(w)))return ['',punchUpper(words.join(' '))];
+ let cut=-1;
+ for(let i=words.length-2;i>=1;i--)if(/[,:;!?…]$/.test(words[i])){cut=i+1;break}
+ if(cut<0||words.length-cut>4)cut=words.length-Math.min(3,Math.ceil(words.length/3));
+ // A faixa precisa ter pelo menos uma palavra de verdade, não só emoji.
+ while(cut>1&&!/[\p{L}\p{N}]/u.test(words.slice(cut).join(' ')))cut--;
+ // Evita deixar artigo/preposição sozinho no fim da linha de cima.
+ if(cut>1&&cut<words.length-1&&/^(o|a|os|as|um|uma|de|da|do|na|no|em|e|com|pra|para)$/i.test(words[cut-1]))cut--;
+ return [punchUpper(words.slice(0,cut).join(' ')),punchUpper(words.slice(cut).join(' '))];
+}
+function punchEase(t){if(t<=0)return 0;if(t>=1)return 1;const c1=1.9,c3=c1+1,u=t-1;return 1+c3*u*u*u+c1*u*u}
+function drawPunchCard(g,w,h,title,subtitle,at,style,sc){
+ const age=punchAge(title+'|'+subtitle),k=sc*PUNCH_SCALE,maxW=w*.9;
+ const [top,band]=punchSplit(title);
+ const font=(px,wt=700)=>wt+' '+px+'px "Pixelify Sans",sans-serif';
+ const wrap=(txt,f,lim)=>{g.font=f;const out=[];let line='';for(const word of String(txt).split(/\s+/).filter(Boolean)){const next=line?line+' '+word:word;if(line&&g.measureText(next).width>lim){out.push(line);line=word}else line=next}if(line)out.push(line);return out};
+ g.save();g.textAlign='center';g.textBaseline='middle';g.lineJoin='round';
+ let tfs=50*k,topLines=top?wrap(top,font(tfs),maxW):[];
+ while(topLines.length>2&&tfs>30*k){tfs-=3*k;topLines=wrap(top,font(tfs),maxW)}
+ let bfs=60*k;g.font=font(bfs);
+ while(g.measureText(band).width>maxW-44*k&&bfs>44*k){bfs-=2*k;g.font=font(bfs)}
+ const bandLines=wrap(band,font(bfs),maxW-44*k);
+ const sfs=25*k,subLines=subtitle?wrap(subtitle,font(sfs,600),maxW-40*k):[];
+ const tH=topLines.length*tfs*1.12,bH=bandLines.length*bfs*1.32,sH=subLines.length?16*k+subLines.length*sfs*1.4+14*k:0;
+ const total=tH+(tH?8*k:0)+bH+sH;
+ let y=at<.3?14*sc+10*k:h*at-total/2;
+ y=clamp(y,8*sc,h-total-8*sc);
+ // Linha de cima: branca com contorno grosso, entra primeiro.
+ const p1=punchEase(age/.22);
+ for(const line of topLines){
+  const cy=y+tfs*.56;
+  g.save();g.translate(w/2,cy);g.scale(.35+.65*p1,.35+.65*p1);g.globalAlpha*=clamp(age/.08,0,1);
+  g.font=font(tfs);g.lineWidth=11*k;g.strokeStyle='#1a1206';g.strokeText(line,0,0,maxW);
+  g.fillStyle='#ffffff';g.fillText(line,0,0,maxW);g.restore();
+  y+=tfs*1.12;
+ }
+ if(tH)y+=8*k;
+ // Faixa com a palavra-chave: entra logo depois, com leve inclinação.
+ const p2=punchEase((age-.12)/.24);
+ if(p2>0){
+  const bandColor=style==='dark'?'#ff5a3c':'#ffd23f',bandInk=style==='dark'?'#ffffff':'#1a1206';
+  for(const line of bandLines){
+   g.font=font(bfs);const tw=Math.min(maxW,g.measureText(line).width+44*k),bh=bfs*1.24,cy=y+bh/2;
+   g.save();g.translate(w/2,cy);g.rotate(-.025);g.scale(.3+.7*p2,.3+.7*p2);
+   g.shadowColor='rgba(0,0,0,.45)';g.shadowBlur=12*k;g.shadowOffsetY=6*k;
+   g.fillStyle='#1a1206';g.fillRect(-tw/2-5*k,-bh/2-5*k,tw+10*k,bh+10*k);
+   g.shadowColor='transparent';g.fillStyle=bandColor;g.fillRect(-tw/2,-bh/2,tw,bh);
+   g.fillStyle=bandInk;g.fillText(line,0,bfs*.04,tw-28*k);g.restore();
+   y+=bfs*1.32;
+  }
+ }else y+=bH;
+ // Subtítulo: pílula escura e discreta, como legenda de narração.
+ if(subLines.length&&age>.3){
+  y+=16*k;g.font=font(sfs,600);
+  const sw=Math.min(maxW,Math.max(...subLines.map(l=>g.measureText(l).width))+40*k),sh=subLines.length*sfs*1.4+14*k;
+  g.save();g.globalAlpha*=clamp((age-.3)/.2,0,1);
+  g.fillStyle='rgba(16,10,4,.72)';rr(g,(w-sw)/2,y,sw,sh,sh/2>22*k?16*k:sh/2);g.fill();
+  g.fillStyle='#fff6df';let yy=y+7*k+sfs*.7;for(const l of subLines){g.fillText(l,w/2,yy,sw-24*k);yy+=sfs*1.4}
+  g.restore();
+ }
+ g.restore();
+}
 function drawWelcomeCard(g,w,h,title,subtitle='',at=.24,style='light',sc=w/720,centerAt=false){
+ if(typeof STUDIO!=='undefined'&&STUDIO.punch&&!centerAt&&String(title).length<=70&&String(title).trim()){drawPunchCard(g,w,h,String(title),subtitle?String(subtitle):'',at,style,sc);return}
  const bw=Math.min(w*.87,640*sc),x=(w-bw)/2;
  const maxW=bw-52*sc,fs=(title.length>48?27:title.length>30?31:38)*sc,subFs=24*sc;
  g.save();g.textAlign='center';g.textBaseline='middle';
@@ -3559,8 +3644,9 @@ function drawDayRecap(g,w,h,recap,now){
   drawWelcomeCard(g,w,h,'Boa noite, Pixelândia','',.75);
  }
 }
-const STUDIO={voteOptions:['casa','celeiro','mercado'],voteSeconds:20,mode:'welcome',format:'vertical',camera:'auto',captions:true,music:true,hud:false,resident:'',event:'party',episodeVote:true,welcomeResult:''};
+const STUDIO={voteOptions:['casa','celeiro','mercado'],voteSeconds:20,mode:'welcome',format:'vertical',camera:'auto',captions:true,punch:true,hook:true,music:true,hud:false,resident:'',event:'party',episodeVote:true,welcomeResult:''};
 const USE_STUDIO_SCRIPT={vote:false,event:false};
+try{const st=JSON.parse(localStorage.getItem('pixelandia-studio-style')||'null');if(st){if(typeof st.punch==='boolean')STUDIO.punch=st.punch;if(typeof st.hook==='boolean')STUDIO.hook=st.hook}}catch(e){}
 try{
  const draft=JSON.parse(localStorage.getItem(WELCOME_DRAFT_KEY)||'null');
  if(draft){
@@ -3629,14 +3715,14 @@ function openRecMenu(){
  <div class="bgrp">1. Tipo de vídeo</div><div class="bgrid studio-grid">${card}</div>
  <div class="bgrp">2. Configuração</div><div class="studio-fields"><div id="stFormatField"><label for="stFormat">Formato do vídeo</label><select class="in" id="stFormat"><option value="horizontal">▭ Horizontal 16:9 — YouTube</option><option value="vertical">▯ Vertical 9:16 — Shorts / Reels</option></select></div>
  <div id="stCameraField"><label for="stCamera">Câmera</label><select class="in" id="stCamera"><option value="auto">🎬 Diretor automático</option><option value="manual">🕹️ Manual</option><option value="fixed">📌 Fixa</option></select></div>
- <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 📖 História narrada em textos e legendas</label><label><input type="checkbox" id="stMusic"> 🎵 Música e efeitos no vídeo (sem voz)</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
+ <div id="stExtra"></div><div class="studio-checks"><label><input type="checkbox" id="stCaptions"> 📖 História narrada em textos e legendas</label><label><input type="checkbox" id="stPunch"> ⚡ Legendas de impacto (faixa amarela, estilo Shorts)</label><label><input type="checkbox" id="stHook"> 🪝 Gancho forte nos 3 primeiros segundos</label><label><input type="checkbox" id="stMusic"> 🎵 Música e efeitos no vídeo (sem voz)</label><label><input type="checkbox" id="stHud"> 📊 Indicadores da vila no vídeo</label></div></div>
  <p class="tip" id="stSummary"></p><div class="row"><button class="btn big" id="stStart">🔴 Iniciar gravação</button><button class="btn" id="stPreview">👁️ Prévia</button></div>
  <p class="tip">O vídeo será salvo em WebM ou MP4, conforme o navegador. No celular, se a captura não estiver disponível, use o gravador de tela.</p>`);
  $('mX').onclick=closeModal;
  const recapHighlights=dayRecapHighlights();
  let recapHighlight=recapHighlights[0]||null;
  const f=$('stFormat'),camSel=$('stCamera');f.value=STUDIO.format;camSel.value=STUDIO.camera;
- for(const [key,id] of [['captions','stCaptions'],['music','stMusic'],['hud','stHud']]){$(id).checked=STUDIO[key];$(id).onchange=e=>{STUDIO[key]=e.target.checked;update()}}
+ for(const [key,id] of [['captions','stCaptions'],['punch','stPunch'],['hook','stHook'],['music','stMusic'],['hud','stHud']]){$(id).checked=STUDIO[key];$(id).onchange=e=>{STUDIO[key]=e.target.checked;HOOK_ON=STUDIO.hook;try{localStorage.setItem('pixelandia-studio-style',JSON.stringify({punch:STUDIO.punch,hook:STUDIO.hook}))}catch(err){}update()}}
  f.onchange=()=>{STUDIO.format=f.value;if(STUDIO.mode==='welcome')saveWelcomeDraft();update()};camSel.onchange=()=>{STUDIO.camera=camSel.value;update()};
  $('modalBox').querySelectorAll('[data-studio]').forEach(b=>b.onclick=()=>{STUDIO.mode=b.dataset.studio;update()});
  function update(){document.querySelectorAll('.studio-mode').forEach(b=>b.classList.toggle('studio-selected',b.dataset.studio===STUDIO.mode));
@@ -3903,18 +3989,22 @@ function audioTick(dt){
   if(EV.chickens.length&&Math.random()<dt*1.5)sfx('cluck');
 }
 // ================== GANCHO NOS PRIMEIROS SEGUNDOS ==================
-let HOOK_ON=false;
+let HOOK_ON=STUDIO.hook!==false;
 function hookText(kind){
   const ev={fire:'🔥 Alguém colocou fogo na vila!',party:'🎆 Hoje tem festa no Mundo Pixelândia!',chickens:'🐔 40 galinhas fugiram! Quem pega?',ufo:'👽 Um OVNI apareceu… quem ele vai levar?',rain:'⛈️ Uma tempestade chegou na vila!',snow:'❄️ Nevou no Mundo Pixelândia!'};
   if(kind&&ev[kind])return ev[kind];
   const all=DAYLOG.filter(e=>e.d===day()).sort((a,b)=>b.w-a.w||b.at-a.at);
   if(all.length&&all[0].w>=3)return all[0].t;
-  return kind==='free'?'🎉 Chegou gente nova no Mundo Pixelândia!':'🌲 Esse mundo só cresce com os comentários 👇';
+  return kind==='free'?'👀 Olha o que está acontecendo na vila!':'🏡 Você pode ser o próximo morador 👇';
 }
 function drawHook(g,W2,H2,s,text,age){
  if(age>3)return;
- g.save();g.globalAlpha=clamp(Math.min(age/.2,(3-age)/.4),0,1);
- drawWelcomeCard(g,W2,H2,text,'',.42,'dark');
+ g.save();
+ // Flash curto no primeiro instante para prender o olhar.
+ if(age<.15){g.fillStyle=`rgba(255,255,255,${.5*(1-age/.15)})`;g.fillRect(0,0,W2,H2)}
+ g.globalAlpha=clamp((3-age)/.35,0,1);
+ PUNCH_SCALE=1.15;
+ try{drawWelcomeCard(g,W2,H2,text,'',.36,'light')}finally{PUNCH_SCALE=1}
  g.restore();
 }
 
